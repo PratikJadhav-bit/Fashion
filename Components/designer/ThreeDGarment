@@ -1,0 +1,338 @@
+import React, { useRef, useEffect } from "react";
+import * as THREE from "three";
+import { OrbitControls } from "three/examples/jsm/controls/OrbitControls";
+
+export default function ThreeDGarment({ design, graphics, onGraphicClick, selectedGraphicId, view = "front" }) {
+  const mountRef = useRef(null);
+  const sceneRef = useRef(null);
+  const rendererRef = useRef(null);
+  const cameraRef = useRef(null);
+  const controlsRef = useRef(null);
+  const meshRef = useRef(null);
+  const texturesRef = useRef({});
+  const [error, setError] = React.useState(false);
+
+  // Material texture configurations
+  const materialTextures = {
+    cotton_ringspun: { roughness: 0.8, metalness: 0.1, normalScale: 1.5 },
+    cotton_jersey: { roughness: 0.75, metalness: 0.05, normalScale: 1.2 },
+    cotton_pima: { roughness: 0.7, metalness: 0.15, normalScale: 1.0 },
+    polyester_blend_50_50: { roughness: 0.5, metalness: 0.3, normalScale: 0.8 },
+    tri_blend: { roughness: 0.6, metalness: 0.2, normalScale: 1.3 },
+    fleece: { roughness: 0.9, metalness: 0.0, normalScale: 2.0 }
+  };
+
+  useEffect(() => {
+    if (!mountRef.current) return;
+
+    try {
+      // Scene setup
+      const scene = new THREE.Scene();
+      scene.background = new THREE.Color(0xf5f5f5);
+      sceneRef.current = scene;
+
+      // Camera
+      const camera = new THREE.PerspectiveCamera(
+        50,
+        mountRef.current.clientWidth / mountRef.current.clientHeight,
+        0.1,
+        1000
+      );
+      camera.position.set(0, 0, 5);
+      cameraRef.current = camera;
+
+      // Renderer with error handling
+      const renderer = new THREE.WebGLRenderer({ 
+        antialias: true,
+        alpha: true,
+        failIfMajorPerformanceCaveat: false
+      });
+      renderer.setSize(mountRef.current.clientWidth, mountRef.current.clientHeight);
+      renderer.shadowMap.enabled = true;
+      renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+      mountRef.current.appendChild(renderer.domElement);
+      rendererRef.current = renderer;
+
+    // Enhanced Lighting Setup
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+    scene.add(ambientLight);
+
+    // Key light (main light)
+    const keyLight = new THREE.DirectionalLight(0xffffff, 1.2);
+    keyLight.position.set(5, 8, 5);
+    keyLight.castShadow = true;
+    keyLight.shadow.mapSize.width = 2048;
+    keyLight.shadow.mapSize.height = 2048;
+    keyLight.shadow.camera.near = 0.5;
+    keyLight.shadow.camera.far = 50;
+    scene.add(keyLight);
+
+    // Fill light (softer, from opposite side)
+    const fillLight = new THREE.DirectionalLight(0xffffff, 0.5);
+    fillLight.position.set(-5, 3, -5);
+    scene.add(fillLight);
+
+    // Rim light (back lighting for depth)
+    const rimLight = new THREE.DirectionalLight(0xffffff, 0.7);
+    rimLight.position.set(0, 5, -8);
+    scene.add(rimLight);
+
+    // Hemisphere light for natural ambient
+    const hemiLight = new THREE.HemisphereLight(0xffffff, 0x444444, 0.4);
+    hemiLight.position.set(0, 20, 0);
+    scene.add(hemiLight);
+
+    // Create enhanced T-shirt geometry with better shape
+    const geometry = new THREE.BoxGeometry(2, 2.5, 0.3, 4, 4, 2);
+
+    // Create fabric texture
+    const canvas = document.createElement('canvas');
+    canvas.width = 512;
+    canvas.height = 512;
+    const ctx = canvas.getContext('2d');
+
+    // Generate fabric weave pattern
+    const imgData = ctx.createImageData(512, 512);
+    for (let i = 0; i < imgData.data.length; i += 4) {
+      const x = (i / 4) % 512;
+      const y = Math.floor((i / 4) / 512);
+      const value = 128 + Math.sin(x * 0.1) * 20 + Math.sin(y * 0.1) * 20 + Math.random() * 10;
+      imgData.data[i] = value;
+      imgData.data[i + 1] = value;
+      imgData.data[i + 2] = value;
+      imgData.data[i + 3] = 255;
+    }
+    ctx.putImageData(imgData, 0, 0);
+
+    const fabricTexture = new THREE.CanvasTexture(canvas);
+    fabricTexture.wrapS = THREE.RepeatWrapping;
+    fabricTexture.wrapT = THREE.RepeatWrapping;
+    fabricTexture.repeat.set(4, 4);
+
+    // Get material properties
+    const matProps = materialTextures[design.material] || materialTextures.cotton_ringspun;
+
+    const material = new THREE.MeshStandardMaterial({
+      color: new THREE.Color(design.base_color),
+      roughness: matProps.roughness,
+      metalness: matProps.metalness,
+      normalMap: fabricTexture,
+      normalScale: new THREE.Vector2(matProps.normalScale, matProps.normalScale),
+      envMapIntensity: 0.8,
+    });
+
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    scene.add(mesh);
+    meshRef.current = mesh;
+
+    // Enhanced Controls
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.08;
+    controls.enableZoom = true;
+    controls.enablePan = false;
+    controls.minDistance = 3;
+    controls.maxDistance = 8;
+    controls.maxPolarAngle = Math.PI / 1.5;
+    controls.minPolarAngle = Math.PI / 4;
+    controlsRef.current = controls;
+
+    // Animation loop
+    const animate = () => {
+      requestAnimationFrame(animate);
+      controls.update();
+      renderer.render(scene, camera);
+    };
+    animate();
+
+    // Handle resize
+    const handleResize = () => {
+      if (!mountRef.current) return;
+      const width = mountRef.current.clientWidth;
+      const height = mountRef.current.clientHeight;
+      camera.aspect = width / height;
+      camera.updateProjectionMatrix();
+      renderer.setSize(width, height);
+    };
+    window.addEventListener("resize", handleResize);
+
+      // Cleanup
+      return () => {
+        window.removeEventListener("resize", handleResize);
+        if (mountRef.current && renderer.domElement && mountRef.current.contains(renderer.domElement)) {
+          mountRef.current.removeChild(renderer.domElement);
+        }
+        renderer.dispose();
+        geometry.dispose();
+        material.dispose();
+      };
+    } catch (error) {
+      console.error("WebGL Error:", error);
+      setError(true);
+    }
+  }, []);
+
+  // Update base color and material
+  useEffect(() => {
+    if (meshRef.current) {
+      meshRef.current.material.color.set(design.base_color);
+      const matProps = materialTextures[design.material] || materialTextures.cotton_ringspun;
+      meshRef.current.material.roughness = matProps.roughness;
+      meshRef.current.material.metalness = matProps.metalness;
+      meshRef.current.material.normalScale.set(matProps.normalScale, matProps.normalScale);
+      meshRef.current.material.needsUpdate = true;
+    }
+  }, [design.base_color, design.material]);
+
+  // Handle view changes
+  useEffect(() => {
+    if (!cameraRef.current || !controlsRef.current || !meshRef.current) return;
+    
+    const camera = cameraRef.current;
+    const controls = controlsRef.current;
+    
+    // Smooth camera transitions
+    const targetPositions = {
+      front: { x: 0, y: 0, z: 5 },
+      back: { x: 0, y: 0, z: -5 },
+      side: { x: 5, y: 0, z: 0 }
+    };
+    
+    const target = targetPositions[view] || targetPositions.front;
+    
+    // Animate camera position
+    const duration = 1000;
+    const startPos = { x: camera.position.x, y: camera.position.y, z: camera.position.z };
+    const startTime = Date.now();
+    
+    const animateCamera = () => {
+      const elapsed = Date.now() - startTime;
+      const progress = Math.min(elapsed / duration, 1);
+      const eased = 1 - Math.pow(1 - progress, 3); // ease out cubic
+      
+      camera.position.x = startPos.x + (target.x - startPos.x) * eased;
+      camera.position.y = startPos.y + (target.y - startPos.y) * eased;
+      camera.position.z = startPos.z + (target.z - startPos.z) * eased;
+      
+      camera.lookAt(0, 0, 0);
+      controls.update();
+      
+      if (progress < 1) {
+        requestAnimationFrame(animateCamera);
+      }
+    };
+    
+    animateCamera();
+  }, [view]);
+
+  // Update graphics as textures with performance optimization
+  useEffect(() => {
+    if (!meshRef.current || !sceneRef.current) return;
+
+    // Remove old graphic sprites efficiently
+    const oldSprites = sceneRef.current.children.filter(
+      (child) => child.userData.isGraphicSprite
+    );
+    oldSprites.forEach((sprite) => {
+      sceneRef.current.remove(sprite);
+      if (sprite.material) {
+        if (sprite.material.map) sprite.material.map.dispose();
+        sprite.material.dispose();
+      }
+    });
+
+    // Add new graphic sprites with caching
+    graphics.forEach((graphic) => {
+      const addSprite = (texture) => {
+        const spriteMaterial = new THREE.SpriteMaterial({ 
+          map: texture,
+          transparent: true,
+          depthTest: true,
+          depthWrite: false
+        });
+        const sprite = new THREE.Sprite(spriteMaterial);
+        
+        // Position based on design coordinates (convert to 3D space)
+        const x = ((graphic.position_x - 50) / 50) * 0.9;
+        const y = -((graphic.position_y - 50) / 50) * 1.1;
+        sprite.position.set(x, y, 0.16);
+        
+        // Scale - auto-adjust to fit garment proportionally
+        const baseScale = graphic.scale * 0.3;
+        sprite.scale.set(baseScale, baseScale, 1);
+        
+        // Rotation
+        sprite.material.rotation = (graphic.rotation * Math.PI) / 180;
+        
+        sprite.userData.isGraphicSprite = true;
+        sprite.userData.graphicId = graphic.id;
+        
+        sceneRef.current.add(sprite);
+      };
+
+      if (graphic.type === "image") {
+        // Use cached texture if available
+        if (texturesRef.current[graphic.content]) {
+          addSprite(texturesRef.current[graphic.content]);
+        } else {
+          const loader = new THREE.TextureLoader();
+          loader.load(
+            graphic.content,
+            (texture) => {
+              texturesRef.current[graphic.content] = texture;
+              addSprite(texture);
+            },
+            undefined,
+            (error) => console.error("Error loading texture:", error)
+          );
+        }
+      } else if (graphic.type === "text") {
+        // Create text texture with antialiasing
+        const canvas = document.createElement("canvas");
+        canvas.width = 1024;
+        canvas.height = 512;
+        const ctx = canvas.getContext("2d");
+        
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        
+        // Add text shadow for depth
+        ctx.shadowColor = "rgba(0,0,0,0.3)";
+        ctx.shadowBlur = 4;
+        ctx.shadowOffsetX = 2;
+        ctx.shadowOffsetY = 2;
+        
+        ctx.fillStyle = graphic.text_properties?.font_color || "#000000";
+        ctx.font = `bold ${graphic.text_properties?.font_size * 3 || 72}px ${graphic.text_properties?.font_family || "Arial"}`;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(graphic.content, canvas.width / 2, canvas.height / 2);
+        
+        const texture = new THREE.CanvasTexture(canvas);
+        texture.minFilter = THREE.LinearFilter;
+        texture.magFilter = THREE.LinearFilter;
+        addSprite(texture);
+      }
+    });
+  }, [graphics]);
+
+  if (error) {
+    return (
+      <div className="w-full h-full flex items-center justify-center bg-gray-100" style={{ minHeight: "500px" }}>
+        <div className="text-center p-8">
+          <p className="text-gray-600 mb-4">3D view is not available on this device</p>
+          <p className="text-sm text-gray-500">Please use 2D view instead</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div 
+      ref={mountRef} 
+      className="w-full h-full"
+      style={{ minHeight: "500px" }}
+    />
+  );
+}

@@ -1,0 +1,922 @@
+import React from "react";
+import { base44 } from "@/api/base44Client";
+import { createPageUrl } from "@/utils";
+import { useNavigate } from "react-router-dom";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Card, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { motion } from "framer-motion";
+import {
+  ShoppingBag,
+  Plus,
+  Edit,
+  Trash2,
+  ExternalLink,
+  Link as LinkIcon,
+  RefreshCw,
+  AlertCircle,
+  Sparkles
+} from "lucide-react";
+
+export default function ManageAffiliateProducts() {
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const [user, setUser] = React.useState(null);
+  const [showDialog, setShowDialog] = React.useState(false);
+  const [editingProduct, setEditingProduct] = React.useState(null);
+  const [showHomepageDialog, setShowHomepageDialog] = React.useState(false);
+  const [homepageUrl, setHomepageUrl] = React.useState("");
+  const [isExtracting, setIsExtracting] = React.useState(false);
+  const [showSuggestionsDialog, setShowSuggestionsDialog] = React.useState(false);
+  const [suggestedProducts, setSuggestedProducts] = React.useState([]);
+  const [isLoadingSuggestions, setIsLoadingSuggestions] = React.useState(false);
+  const [formData, setFormData] = React.useState({
+    product_name: "",
+    product_url: "",
+    image_url: "",
+    category: "tops",
+    occasion_type: [],
+    style_tags: [],
+    color: "",
+    price: "",
+    price_range: "moderate",
+    source_platform: "Amazon",
+    gender: "unisex",
+    season: [],
+    is_active: true
+  });
+
+  React.useEffect(() => {
+    const loadUser = async () => {
+      try {
+        const currentUser = await base44.auth.me();
+        setUser(currentUser);
+        if (currentUser.role !== 'admin') {
+          navigate(createPageUrl("Home"));
+        }
+      } catch (error) {
+        base44.auth.redirectToLogin(createPageUrl("ManageAffiliateProducts"));
+      }
+    };
+    loadUser();
+  }, []);
+
+  const { data: products = [], isLoading } = useQuery({
+    queryKey: ['affiliateProducts'],
+    queryFn: () => base44.entities.AffiliateProduct.list('-created_date'),
+    initialData: [],
+  });
+
+  const createMutation = useMutation({
+    mutationFn: (data) => base44.entities.AffiliateProduct.create(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['affiliateProducts'] });
+      resetForm();
+    },
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: ({ id, data }) => base44.entities.AffiliateProduct.update(id, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['affiliateProducts'] });
+      resetForm();
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id) => base44.entities.AffiliateProduct.delete(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['affiliateProducts'] });
+    },
+  });
+
+  const resetForm = () => {
+    setFormData({
+      product_name: "",
+      product_url: "",
+      image_url: "",
+      category: "tops",
+      occasion_type: [],
+      style_tags: [],
+      color: "",
+      price: "",
+      price_range: "moderate",
+      source_platform: "Amazon",
+      gender: "unisex",
+      season: [],
+      is_active: true
+    });
+    setEditingProduct(null);
+    setShowDialog(false);
+  };
+
+  const handleEdit = (product) => {
+    setEditingProduct(product);
+    setFormData({
+      product_name: product.product_name,
+      product_url: product.product_url,
+      image_url: product.image_url || "",
+      category: product.category,
+      occasion_type: product.occasion_type || [],
+      style_tags: product.style_tags || [],
+      color: product.color || "",
+      price: product.price || "",
+      price_range: product.price_range || "moderate",
+      source_platform: product.source_platform || "Amazon",
+      gender: product.gender || "unisex",
+      season: product.season || [],
+      is_active: product.is_active !== false
+    });
+    setShowDialog(true);
+  };
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    const data = {
+      ...formData,
+      price: formData.price ? parseFloat(formData.price) : 0
+    };
+
+    if (editingProduct) {
+      updateMutation.mutate({ id: editingProduct.id, data });
+    } else {
+      createMutation.mutate(data);
+    }
+  };
+
+  const toggleTag = (field, value) => {
+    setFormData(prev => ({
+      ...prev,
+      [field]: prev[field].includes(value)
+        ? prev[field].filter(v => v !== value)
+        : [...prev[field], value]
+    }));
+  };
+
+  const handleGetProductSuggestions = async () => {
+    setIsLoadingSuggestions(true);
+    setShowSuggestionsDialog(true);
+    
+    try {
+      const prompt = `Analyze current fashion trends for 2025 and suggest 40 essential products for a fashion marketplace.
+
+CATEGORIES TO COVER:
+- Tops: t-shirts, shirts, blouses, sweaters, crop tops
+- Bottoms: jeans, trousers, skirts, shorts, palazzo
+- Dresses: casual, formal, party, maxi, midi
+- Outerwear: jackets, coats, hoodies, blazers
+- Shoes: sneakers, heels, boots, sandals, flats
+- Accessories: bags, belts, hats, sunglasses, scarves
+- Jewelry: watches, bracelets, rings, necklaces, earrings
+- Activewear: gym clothes, yoga wear, sports shoes
+- Formal: suits, blazers, formal dresses, office wear
+
+For EACH product provide:
+- product_name: Specific descriptive name (e.g., "Classic Black Leather Jacket")
+- category: One of: tops, bottoms, dresses, outerwear, shoes, watches, bracelets, rings, necklaces, bags, eyewear, belts, hats, perfumes, accessories, activewear, formal
+- description: 2-3 sentence description
+- typical_price_min: Minimum price in INR (numeric)
+- typical_price_max: Maximum price in INR (numeric)
+- target_gender: male, female, or unisex
+- style_tags: 3-5 style keywords (e.g., ["casual", "trendy", "comfortable"])
+- color_suggestions: 2-3 popular colors (e.g., ["Black", "Navy Blue"])
+- occasions: Suitable occasions array
+- season: Suitable seasons array
+- why_needed: Why this is trending/essential
+- search_keywords: Keywords users might search for
+
+Focus on items users frequently search for and need.`;
+
+      const result = await base44.integrations.Core.InvokeLLM({
+        prompt: prompt,
+        add_context_from_internet: true,
+        response_json_schema: {
+          type: "object",
+          properties: {
+            suggested_products: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  product_name: { type: "string" },
+                  category: { type: "string" },
+                  description: { type: "string" },
+                  typical_price_min: { type: "number" },
+                  typical_price_max: { type: "number" },
+                  target_gender: { type: "string" },
+                  style_tags: { type: "array", items: { type: "string" } },
+                  color_suggestions: { type: "array", items: { type: "string" } },
+                  occasions: { type: "array", items: { type: "string" } },
+                  season: { type: "array", items: { type: "string" } },
+                  why_needed: { type: "string" },
+                  search_keywords: { type: "string" }
+                }
+              }
+            }
+          }
+        }
+      });
+
+      setSuggestedProducts(result.suggested_products || []);
+    } catch (error) {
+      console.error("Error getting suggestions:", error);
+      alert("Failed to get product suggestions: " + error.message);
+    }
+    
+    setIsLoadingSuggestions(false);
+  };
+
+  const handleAddSuggestedProduct = (product) => {
+    const avgPrice = product.typical_price_min && product.typical_price_max 
+      ? Math.round((product.typical_price_min + product.typical_price_max) / 2)
+      : 1000;
+
+    setFormData({
+      product_name: product.product_name,
+      product_url: "",
+      image_url: "",
+      category: product.category || "accessories",
+      occasion_type: product.occasions || [],
+      style_tags: product.style_tags || [],
+      color: product.color_suggestions?.[0] || "",
+      price: avgPrice,
+      price_range: avgPrice < 1000 ? "budget_friendly" : avgPrice < 3000 ? "moderate" : "luxury",
+      source_platform: "Amazon",
+      gender: product.target_gender || "unisex",
+      season: product.season || ["all_season"],
+      is_active: true
+    });
+    
+    setShowSuggestionsDialog(false);
+    setShowDialog(true);
+  };
+
+  const handleExtractProducts = async () => {
+    if (!homepageUrl) return;
+
+    setIsExtracting(true);
+    try {
+      const prompt = `You are a precise web scraping assistant. Extract product information from: ${homepageUrl}
+
+🎯 CRITICAL EXTRACTION REQUIREMENTS:
+
+1. **USE WEB SEARCH FIRST** - Access the live webpage to see actual HTML/content
+2. **EXTRACT EVERY VISIBLE PRODUCT** on the page - do not skip any items
+3. **BE EXACT AND ACCURATE** - extract real data, don't make assumptions
+
+📋 FOR EACH PRODUCT, EXTRACT:
+
+**Required Fields:**
+- product_name: EXACT product title as shown (copy verbatim)
+- product_url: COMPLETE product page URL (must be clickable/valid)
+- image_url: DIRECT image URL (not thumbnail, highest quality)
+- price: NUMERIC price only (remove ₹, $, commas - e.g., 1499.00)
+
+**Auto-detect Fields:**
+- brand: Brand/manufacturer name (from product title or description)
+- color: PRIMARY visible color (Black, Blue, Red, White, Multi-color, etc.)
+- description: Product description/details if available
+
+**Classification Fields:**
+- category: Choose ONE: tops, bottoms, dresses, outerwear, shoes, watches, bracelets, rings, necklaces, bags, eyewear, belts, hats, perfumes, accessories, activewear, formal
+- gender: male, female, or unisex (infer from product)
+- style_tags: 2-4 descriptive tags (e.g., ["casual", "trendy", "comfortable", "formal"])
+- season: Suitable seasons from [spring, summer, fall, winter, all_season]
+- occasion_type: Suitable occasions from [wedding, party, casual_hangout, business_meeting, dinner, formal_event, gym, beach]
+
+🔍 EXTRACTION RULES:
+- For Amazon: extract from product cards/listings on search/category pages
+- For Flipkart/Meesho: extract from grid/list views
+- URLs MUST be absolute (start with https://)
+- Images MUST be direct image URLs (not data URIs)
+- Prices MUST be numeric (no currency symbols)
+- Extract minimum 5-50 products depending on page content
+
+⚠️ QUALITY CHECKS:
+- Verify all URLs start with http:// or https://
+- Ensure product names are descriptive (not truncated)
+- Check image URLs actually point to images
+- Validate price is a positive number
+
+Return detailed JSON with ALL extracted products.`;
+
+      const result = await base44.integrations.Core.InvokeLLM({
+        prompt: prompt,
+        add_context_from_internet: true,
+        response_json_schema: {
+          type: "object",
+          properties: {
+            products: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  product_name: { type: "string" },
+                  product_url: { type: "string" },
+                  image_url: { type: "string" },
+                  category: { type: "string" },
+                  price: { type: "number" },
+                  description: { type: "string" },
+                  brand: { type: "string" },
+                  style_tags: { type: "array", items: { type: "string" } },
+                  color: { type: "string" },
+                  gender: { type: "string" },
+                  season: { type: "array", items: { type: "string" } },
+                  occasion_type: { type: "array", items: { type: "string" } }
+                },
+                required: ["product_name", "product_url", "price"]
+              }
+            }
+          }
+        }
+      });
+
+      if (result.products && result.products.length > 0) {
+        const validProducts = result.products.filter(p => 
+          p.product_name && 
+          p.product_url && 
+          p.price > 0
+        );
+
+        if (validProducts.length === 0) {
+          alert("❌ No valid products found. Please verify the URL contains product listings.");
+          setIsExtracting(false);
+          return;
+        }
+
+        const productsToCreate = validProducts.map(p => {
+          let productUrl = p.product_url;
+          let imageUrl = p.image_url || "";
+          
+          try {
+            const baseUrl = new URL(homepageUrl);
+            
+            if (productUrl && !productUrl.startsWith('http')) {
+              productUrl = new URL(productUrl, baseUrl.origin).href;
+            }
+            
+            if (imageUrl && !imageUrl.startsWith('http')) {
+              imageUrl = new URL(imageUrl, baseUrl.origin).href;
+            }
+          } catch (e) {
+            console.error("URL parsing error:", e);
+          }
+
+          return {
+            product_name: p.product_name,
+            product_url: productUrl,
+            image_url: imageUrl,
+            category: p.category || "accessories",
+            price: p.price,
+            style_tags: p.style_tags || [],
+            color: p.color || "",
+            price_range: p.price < 1000 ? "budget_friendly" : p.price < 3000 ? "moderate" : "luxury",
+            source_platform: homepageUrl.includes('amazon') ? "Amazon" : 
+                            homepageUrl.includes('flipkart') ? "Flipkart" :
+                            homepageUrl.includes('meesho') ? "Meesho" : "Other",
+            gender: p.gender || "unisex",
+            season: p.season?.length > 0 ? p.season : ["all_season"],
+            occasion_type: p.occasion_type || [],
+            is_active: true,
+            affiliate_homepage_url: homepageUrl
+          };
+        });
+
+        await base44.entities.AffiliateProduct.bulkCreate(productsToCreate);
+        queryClient.invalidateQueries({ queryKey: ['affiliateProducts'] });
+        
+        alert(`✅ Success! Extracted ${productsToCreate.length} products from the page.`);
+        setShowHomepageDialog(false);
+        setHomepageUrl("");
+      } else {
+        alert("❌ No products found. The page may not be accessible or doesn't contain product listings.");
+      }
+    } catch (error) {
+      console.error("Extraction error:", error);
+      alert("❌ Failed to extract products: " + (error.message || "Unknown error"));
+    }
+    setIsExtracting(false);
+  };
+
+  if (!user || user.role !== 'admin') {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-pink-500" />
+      </div>
+    );
+  }
+
+  const occasions = ["wedding", "job_interview", "date", "party", "casual_hangout", "business_meeting", "dinner", "brunch", "concert", "beach", "gym", "formal_event"];
+  const seasons = ["spring", "summer", "fall", "winter", "all_season"];
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-green-50 via-blue-50 to-purple-50 p-4 md:p-8">
+      <div className="max-w-7xl mx-auto">
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="mb-8"
+        >
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-green-400 to-blue-400 flex items-center justify-center">
+                <ShoppingBag className="w-6 h-6 text-white" />
+              </div>
+              <div>
+                <h1 className="text-3xl font-bold text-gray-900">Manage Affiliate Products</h1>
+                <p className="text-gray-600">{products.length} products in database</p>
+              </div>
+            </div>
+            <div className="flex gap-3">
+              <Button
+                onClick={handleGetProductSuggestions}
+                variant="outline"
+                className="border-blue-500 text-blue-600 hover:bg-blue-50"
+              >
+                <Sparkles className="w-4 h-4 mr-2" />
+                AI Suggestions
+              </Button>
+              <Button
+                onClick={() => setShowHomepageDialog(true)}
+                variant="outline"
+                className="border-purple-500 text-purple-600 hover:bg-purple-50"
+              >
+                <LinkIcon className="w-4 h-4 mr-2" />
+                Extract from URL
+              </Button>
+              <Button
+                onClick={() => setShowDialog(true)}
+                className="bg-gradient-to-r from-green-500 to-blue-500"
+              >
+                <Plus className="w-4 h-4 mr-2" />
+                Add Manually
+              </Button>
+            </div>
+          </div>
+        </motion.div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {products.map((product, index) => (
+            <motion.div
+              key={product.id}
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ delay: index * 0.05 }}
+            >
+              <Card className="hover:shadow-xl transition-all">
+                <div className="relative h-48 bg-gray-100">
+                  {product.image_url ? (
+                    <img
+                      src={product.image_url}
+                      alt={product.product_name}
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center text-gray-400">
+                      <ShoppingBag className="w-16 h-16" />
+                    </div>
+                  )}
+                  {!product.is_active && (
+                    <Badge className="absolute top-2 right-2 bg-red-500">Inactive</Badge>
+                  )}
+                </div>
+                <CardContent className="p-4">
+                  <h3 className="font-semibold text-gray-900 mb-1 line-clamp-2">
+                    {product.product_name}
+                  </h3>
+                  <div className="flex items-center gap-2 mb-2">
+                    <Badge variant="outline">{product.category}</Badge>
+                    <Badge variant="outline">{product.source_platform}</Badge>
+                  </div>
+                  <p className="text-sm text-gray-600 mb-3">₹{product.price || 'N/A'}</p>
+                  <div className="flex gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => window.open(product.product_url, '_blank')}
+                      className="flex-1"
+                    >
+                      <ExternalLink className="w-3 h-3 mr-1" />
+                      View
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => handleEdit(product)}
+                    >
+                      <Edit className="w-3 h-3" />
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        if (confirm("Delete this product?")) {
+                          deleteMutation.mutate(product.id);
+                        }
+                      }}
+                    >
+                      <Trash2 className="w-3 h-3" />
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            </motion.div>
+          ))}
+        </div>
+
+        {/* Add/Edit Dialog */}
+        <Dialog open={showDialog} onOpenChange={setShowDialog}>
+          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>{editingProduct ? "Edit" : "Add"} Affiliate Product</DialogTitle>
+            </DialogHeader>
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div>
+                <Label>Product Name *</Label>
+                <Input
+                  value={formData.product_name}
+                  onChange={(e) => setFormData({ ...formData, product_name: e.target.value })}
+                  required
+                />
+              </div>
+
+              <div>
+                <Label>Affiliate Link URL *</Label>
+                <Input
+                  type="url"
+                  value={formData.product_url}
+                  onChange={(e) => setFormData({ ...formData, product_url: e.target.value })}
+                  required
+                />
+              </div>
+
+              <div>
+                <Label>Image URL</Label>
+                <Input
+                  type="url"
+                  value={formData.image_url}
+                  onChange={(e) => setFormData({ ...formData, image_url: e.target.value })}
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label>Category *</Label>
+                  <Select value={formData.category} onValueChange={(value) => setFormData({ ...formData, category: value })}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="tops">Tops</SelectItem>
+                      <SelectItem value="bottoms">Bottoms</SelectItem>
+                      <SelectItem value="dresses">Dresses</SelectItem>
+                      <SelectItem value="outerwear">Outerwear</SelectItem>
+                      <SelectItem value="shoes">Shoes</SelectItem>
+                      <SelectItem value="watches">Watches ⌚</SelectItem>
+                      <SelectItem value="bracelets">Bracelets</SelectItem>
+                      <SelectItem value="rings">Rings</SelectItem>
+                      <SelectItem value="necklaces">Necklaces</SelectItem>
+                      <SelectItem value="bags">Bags 👜</SelectItem>
+                      <SelectItem value="eyewear">Eyewear 🕶️</SelectItem>
+                      <SelectItem value="belts">Belts</SelectItem>
+                      <SelectItem value="hats">Hats 🎩</SelectItem>
+                      <SelectItem value="perfumes">Perfumes</SelectItem>
+                      <SelectItem value="accessories">Other Accessories</SelectItem>
+                      <SelectItem value="activewear">Activewear</SelectItem>
+                      <SelectItem value="formal">Formal</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div>
+                  <Label>Platform</Label>
+                  <Select value={formData.source_platform} onValueChange={(value) => setFormData({ ...formData, source_platform: value })}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Amazon">Amazon</SelectItem>
+                      <SelectItem value="Flipkart">Flipkart</SelectItem>
+                      <SelectItem value="Meesho">Meesho</SelectItem>
+                      <SelectItem value="Other">Other</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-4">
+                <div>
+                  <Label>Price</Label>
+                  <Input
+                    type="number"
+                    value={formData.price}
+                    onChange={(e) => setFormData({ ...formData, price: e.target.value })}
+                  />
+                </div>
+
+                <div>
+                  <Label>Price Range</Label>
+                  <Select value={formData.price_range} onValueChange={(value) => setFormData({ ...formData, price_range: value })}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="budget_friendly">Budget</SelectItem>
+                      <SelectItem value="moderate">Moderate</SelectItem>
+                      <SelectItem value="luxury">Luxury</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div>
+                  <Label>Gender</Label>
+                  <Select value={formData.gender} onValueChange={(value) => setFormData({ ...formData, gender: value })}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="male">Male</SelectItem>
+                      <SelectItem value="female">Female</SelectItem>
+                      <SelectItem value="unisex">Unisex</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <div>
+                <Label>Color</Label>
+                <Input
+                  value={formData.color}
+                  onChange={(e) => setFormData({ ...formData, color: e.target.value })}
+                  placeholder="e.g., Red, Blue, Multi-color"
+                />
+              </div>
+
+              <div>
+                <Label>Occasions</Label>
+                <div className="flex flex-wrap gap-2 mt-2">
+                  {occasions.map(occ => (
+                    <Badge
+                      key={occ}
+                      variant={formData.occasion_type.includes(occ) ? "default" : "outline"}
+                      className="cursor-pointer"
+                      onClick={() => toggleTag('occasion_type', occ)}
+                    >
+                      {occ.replace(/_/g, ' ')}
+                    </Badge>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <Label>Seasons</Label>
+                <div className="flex flex-wrap gap-2 mt-2">
+                  {seasons.map(season => (
+                    <Badge
+                      key={season}
+                      variant={formData.season.includes(season) ? "default" : "outline"}
+                      className="cursor-pointer"
+                      onClick={() => toggleTag('season', season)}
+                    >
+                      {season.replace(/_/g, ' ')}
+                    </Badge>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <Label>Style Tags (comma-separated)</Label>
+                <Input
+                  value={formData.style_tags.join(', ')}
+                  onChange={(e) => setFormData({ ...formData, style_tags: e.target.value.split(',').map(s => s.trim()).filter(Boolean) })}
+                  placeholder="casual, bohemian, minimalist"
+                />
+              </div>
+
+              <div className="flex gap-4">
+                <Button type="button" variant="outline" onClick={resetForm}>
+                  Cancel
+                </Button>
+                <Button type="submit" className="flex-1 bg-gradient-to-r from-green-500 to-blue-500">
+                  {editingProduct ? "Update" : "Add"} Product
+                </Button>
+              </div>
+            </form>
+          </DialogContent>
+        </Dialog>
+
+        {/* Homepage URL Extractor Dialog */}
+        <Dialog open={showHomepageDialog} onOpenChange={setShowHomepageDialog}>
+          <DialogContent className="max-w-lg">
+            <DialogHeader>
+              <DialogTitle>Extract Products from Affiliate Homepage</DialogTitle>
+            </DialogHeader>
+            
+            <div className="space-y-4">
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <div className="flex items-start gap-3">
+                  <AlertCircle className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
+                  <div className="text-sm text-blue-800">
+                    <p className="font-medium mb-1">How it works:</p>
+                    <ul className="list-disc list-inside space-y-1 text-xs">
+                      <li>Paste any affiliate homepage URL (Amazon, Flipkart, etc.)</li>
+                      <li>AI will extract product details automatically</li>
+                      <li>Products will be added with your affiliate links</li>
+                      <li>You can edit individual products later</li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <Label>Affiliate Homepage URL *</Label>
+                <Input
+                  type="url"
+                  value={homepageUrl}
+                  onChange={(e) => setHomepageUrl(e.target.value)}
+                  placeholder="https://example.com/products or https://amzn.to/..."
+                  className="mt-2"
+                />
+              </div>
+
+              <div className="flex gap-3">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setShowHomepageDialog(false);
+                    setHomepageUrl("");
+                  }}
+                  className="flex-1"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={handleExtractProducts}
+                  disabled={!homepageUrl || isExtracting}
+                  className="flex-1 bg-gradient-to-r from-purple-500 to-blue-500"
+                >
+                  {isExtracting ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                      Extracting...
+                    </>
+                  ) : (
+                    <>
+                      <LinkIcon className="w-4 h-4 mr-2" />
+                      Extract Products
+                    </>
+                  )}
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Product Suggestions Dialog */}
+        <Dialog open={showSuggestionsDialog} onOpenChange={setShowSuggestionsDialog}>
+          <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Sparkles className="w-5 h-5 text-blue-500" />
+                AI Product Suggestions
+              </DialogTitle>
+            </DialogHeader>
+
+            {isLoadingSuggestions ? (
+              <div className="flex flex-col items-center justify-center py-12">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mb-4" />
+                <p className="text-gray-600">Analyzing trends and generating suggestions...</p>
+              </div>
+            ) : suggestedProducts.length > 0 ? (
+              <div className="space-y-4">
+                <div className="bg-gradient-to-r from-blue-50 to-purple-50 rounded-lg p-4 mb-4 border border-blue-200">
+                  <div className="flex items-start gap-3">
+                    <Sparkles className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
+                    <div>
+                      <p className="text-sm text-gray-800 font-semibold mb-1">💡 Quick Add Process:</p>
+                      <p className="text-xs text-gray-700">
+                        Click the <strong>"Add"</strong> button on any suggested product to pre-fill the form. Then just add your affiliate link and image URL!
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid gap-3">
+                  {suggestedProducts.map((product, index) => (
+                    <motion.div
+                      key={index}
+                      initial={{ opacity: 0, x: -20 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ delay: index * 0.05 }}
+                    >
+                      <Card className="border-l-4 border-blue-500 hover:shadow-lg transition-all hover:border-l-8">
+                        <CardContent className="p-4">
+                          <div className="flex gap-4">
+                            <div className="flex-shrink-0">
+                              <Button
+                                onClick={() => handleAddSuggestedProduct(product)}
+                                className="bg-gradient-to-r from-green-500 to-blue-500 h-full"
+                                size="sm"
+                              >
+                                <Plus className="w-4 h-4 mr-2" />
+                                Add
+                              </Button>
+                            </div>
+
+                            <div className="flex-1">
+                              <div className="flex justify-between items-start mb-2">
+                                <div className="flex-1">
+                                  <h4 className="font-bold text-lg text-gray-900">{product.product_name}</h4>
+                                  <div className="flex gap-2 mt-1 flex-wrap">
+                                    <Badge className="bg-blue-100 text-blue-800">{product.category}</Badge>
+                                    <Badge variant="outline">{product.target_gender}</Badge>
+                                    {product.color_suggestions?.[0] && (
+                                      <Badge variant="secondary" className="text-xs">{product.color_suggestions[0]}</Badge>
+                                    )}
+                                  </div>
+                                </div>
+                                <div className="text-right ml-2">
+                                  <p className="text-sm font-semibold text-green-600">
+                                    ₹{product.typical_price_min || product.typical_price_range}-{product.typical_price_max || ''}
+                                  </p>
+                                </div>
+                              </div>
+                              
+                              <p className="text-sm text-gray-700 mb-3">{product.description}</p>
+                              
+                              {product.style_tags?.length > 0 && (
+                                <div className="flex flex-wrap gap-1 mb-2">
+                                  {product.style_tags.map(tag => (
+                                    <Badge key={tag} variant="secondary" className="text-xs">{tag}</Badge>
+                                  ))}
+                                </div>
+                              )}
+
+                              {product.occasions?.length > 0 && (
+                                <p className="text-xs text-gray-600 mb-2">
+                                  <strong>Occasions:</strong> {product.occasions.join(', ')}
+                                </p>
+                              )}
+
+                              {product.season?.length > 0 && (
+                                <p className="text-xs text-gray-600 mb-2">
+                                  <strong>Seasons:</strong> {product.season.join(', ')}
+                                </p>
+                              )}
+
+                              {product.search_keywords && (
+                                <p className="text-xs text-gray-500 mb-2">
+                                  <strong>Search terms:</strong> {product.search_keywords}
+                                </p>
+                              )}
+
+                              <div className="bg-yellow-50 rounded-lg p-3 mt-2 border border-yellow-200">
+                                <p className="text-xs text-gray-800">
+                                  <strong>⭐ Why trending:</strong> {product.why_needed}
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    </motion.div>
+                  ))}
+                </div>
+
+              <div className="text-center text-sm text-gray-600 mt-4">
+                Found {suggestedProducts.length} trending products based on current fashion trends
+              </div>
+              </div>
+            ) : (
+              <div className="text-center py-8 text-gray-500">
+                <Sparkles className="w-12 h-12 mx-auto mb-2 text-gray-400" />
+                <p>No suggestions available</p>
+              </div>
+            )}
+
+            <div className="flex gap-3 mt-4">
+              <Button onClick={() => setShowSuggestionsDialog(false)} variant="outline" className="flex-1">
+                Close
+              </Button>
+              <Button
+                onClick={handleGetProductSuggestions}
+                disabled={isLoadingSuggestions}
+                variant="outline"
+                className="flex-1 border-blue-500 text-blue-600"
+              >
+                <RefreshCw className={`w-4 h-4 mr-2 ${isLoadingSuggestions ? 'animate-spin' : ''}`} />
+                Refresh Suggestions
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+      </div>
+    </div>
+  );
+}

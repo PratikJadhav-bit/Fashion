@@ -1,0 +1,1156 @@
+import React from "react";
+import { base44 } from "@/api/base44Client";
+import { createPageUrl } from "@/utils";
+import { useNavigate } from "react-router-dom";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Card, CardContent } from "@/components/ui/card";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Slider } from "@/components/ui/slider";
+import { Badge } from "@/components/ui/badge";
+import { motion, AnimatePresence } from "framer-motion";
+import {
+  Palette,
+  Type,
+  Image as ImageIcon,
+  Layers,
+  Save,
+  Share2,
+  RotateCw,
+  ZoomIn,
+  ZoomOut,
+  Upload,
+  Trash2,
+  Undo,
+  Redo,
+  ArrowLeft,
+  DollarSign,
+  Sparkles,
+  Link as LinkIcon,
+  Download,
+  Facebook,
+  Twitter,
+  Instagram,
+  Loader2,
+  Plus,
+  User,
+  Camera,
+  Pencil
+} from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import ThreeDGarment from "../components/designer/ThreeDGarment";
+import VirtualTryOn from "../components/designer/VirtualTryOn";
+import DrawingCanvas from "../components/designer/DrawingCanvas";
+import ImageEditor from "../components/designer/ImageEditor";
+import AIDesignAssistant from "../components/designer/AIDesignAssistant";
+
+export default function DesignEditor() {
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const [user, setUser] = React.useState(null);
+  const [design, setDesign] = React.useState(null);
+  const [history, setHistory] = React.useState([]);
+  const [historyIndex, setHistoryIndex] = React.useState(-1);
+  const [selectedGraphic, setSelectedGraphic] = React.useState(null);
+  const [rotation, setRotation] = React.useState(0);
+  const [zoom, setZoom] = React.useState(1);
+  const [showSaveDialog, setShowSaveDialog] = React.useState(false);
+  const [showShareDialog, setShowShareDialog] = React.useState(false);
+  const [showAIDialog, setShowAIDialog] = React.useState(false);
+  const [showTryOnDialog, setShowTryOnDialog] = React.useState(false);
+  const [use3D, setUse3D] = React.useState(true);
+  const [designName, setDesignName] = React.useState("");
+  const [textInput, setTextInput] = React.useState("");
+  const [urlInput, setUrlInput] = React.useState("");
+  const [aiPrompt, setAiPrompt] = React.useState("");
+  const [isGeneratingAI, setIsGeneratingAI] = React.useState(false);
+  const [showDrawingDialog, setShowDrawingDialog] = React.useState(false);
+  const [showImageEditor, setShowImageEditor] = React.useState(false);
+  const [editingImage, setEditingImage] = React.useState(null);
+  const [garmentView, setGarmentView] = React.useState("front");
+  const [showGrid, setShowGrid] = React.useState(true);
+  const fileInputRef = React.useRef(null);
+
+  // Pre-made graphics library
+  const graphicsLibrary = [
+    { id: 1, url: "https://images.unsplash.com/photo-1559827260-dc66d52bef19?w=400", name: "Sunset" },
+    { id: 2, url: "https://images.unsplash.com/photo-1502134249126-9f3755a50d78?w=400", name: "Geometric" },
+    { id: 3, url: "https://images.unsplash.com/photo-1579783902614-a3fb3927b6a5?w=400", name: "Paint" },
+    { id: 4, url: "https://images.unsplash.com/photo-1557672172-298e090bd0f1?w=400", name: "Abstract 1" },
+    { id: 5, url: "https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=400", name: "Abstract 2" },
+    { id: 6, url: "https://images.unsplash.com/photo-1561212044-bac5ef688a07?w=400", name: "Neon" },
+    { id: 7, url: "https://images.unsplash.com/photo-1534670007418-fbb7f6cf32c3?w=400", name: "Mountains" },
+    { id: 8, url: "https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=400", name: "Nature" },
+    { id: 9, url: "https://images.unsplash.com/photo-1579546929518-9e396f3cc809?w=400", name: "Gradient 1" },
+    { id: 10, url: "https://images.unsplash.com/photo-1557672199-6b8d0bdc855b?w=400", name: "Gradient 2" },
+    { id: 11, url: "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=400", name: "Abstract 3" },
+    { id: 12, url: "https://images.unsplash.com/photo-1550684848-fac1c5b4e853?w=400", name: "Tropical" }
+  ];
+
+  React.useEffect(() => {
+    const loadUser = async () => {
+      try {
+        const currentUser = await base44.auth.me();
+        setUser(currentUser);
+      } catch (error) {
+        base44.auth.redirectToLogin(createPageUrl("DesignEditor"));
+        return;
+      }
+    };
+    loadUser();
+
+    const savedDesign = sessionStorage.getItem("currentDesign");
+    if (savedDesign) {
+      const initialDesign = JSON.parse(savedDesign);
+      setDesign(initialDesign);
+      setHistory([initialDesign]);
+      setHistoryIndex(0);
+
+      // Check for remix attribution
+      const showAttribution = sessionStorage.getItem("showRemixAttribution");
+      if (showAttribution && initialDesign.remixed_from) {
+        setTimeout(() => {
+          alert(`🎨 Remixed from design by ${initialDesign.original_creator_name || 'another creator'}\n\nYou're creating a remix! Feel free to make it your own while respecting the original creator's work.`);
+          sessionStorage.removeItem("showRemixAttribution");
+        }, 500);
+      }
+    } else {
+      navigate(createPageUrl("CustomDesigner"));
+    }
+  }, []);
+
+  const addToHistory = (newDesign) => {
+    const newHistory = history.slice(0, historyIndex + 1);
+    newHistory.push(newDesign);
+    setHistory(newHistory);
+    setHistoryIndex(newHistory.length - 1);
+    setDesign(newDesign);
+  };
+
+  const undo = () => {
+    if (historyIndex > 0) {
+      setHistoryIndex(historyIndex - 1);
+      setDesign(history[historyIndex - 1]);
+    }
+  };
+
+  const redo = () => {
+    if (historyIndex < history.length - 1) {
+      setHistoryIndex(historyIndex + 1);
+      setDesign(history[historyIndex + 1]);
+    }
+  };
+
+  const saveMutation = useMutation({
+    mutationFn: async (data) => {
+      return await base44.entities.CustomDesign.create({
+        ...data,
+        user_email: user.email
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['customDesigns'] });
+      navigate(createPageUrl("MyDesigns"));
+    },
+  });
+
+  const materials = {
+    cotton_ringspun: { name: "Cotton Ringspun", price: 0, desc: "Soft, durable" },
+    cotton_jersey: { name: "Cotton Jersey", price: 2, desc: "Lightweight" },
+    cotton_pima: { name: "Pima Cotton", price: 5, desc: "Premium" },
+    polyester_blend_50_50: { name: "50/50 Blend", price: 3, desc: "Moisture-wicking" },
+    tri_blend: { name: "Tri-Blend", price: 4, desc: "Ultra-soft" },
+    fleece: { name: "Fleece", price: 6, desc: "Warm" }
+  };
+
+  const colors = [
+    { name: "White", hex: "#FFFFFF" },
+    { name: "Black", hex: "#000000" },
+    { name: "Navy", hex: "#1e3a8a" },
+    { name: "Gray", hex: "#6b7280" },
+    { name: "Red", hex: "#dc2626" },
+    { name: "Pink", hex: "#ec4899" },
+    { name: "Purple", hex: "#9333ea" },
+    { name: "Blue", hex: "#3b82f6" },
+    { name: "Green", hex: "#10b981" },
+    { name: "Yellow", hex: "#fbbf24" },
+    { name: "Orange", hex: "#f97316" },
+    { name: "Teal", hex: "#14b8a6" }
+  ];
+
+  const calculatePrice = () => {
+    if (!design) return 29.99;
+    let price = 29.99;
+    const materialCost = materials[design.material]?.price || 0;
+    price += materialCost;
+    price += design.graphics.length * 3;
+    return price.toFixed(2);
+  };
+
+  const handleImageUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const { file_url } = await base44.integrations.Core.UploadFile({ file });
+      addGraphic(file_url);
+    } catch (error) {
+      console.error("Error uploading image:", error);
+    }
+  };
+
+  const handleUrlAdd = () => {
+    if (!urlInput.trim()) return;
+    addGraphic(urlInput);
+    setUrlInput("");
+  };
+
+  const handleLibraryAdd = (url) => {
+    addGraphic(url);
+  };
+
+  const addGraphic = (url) => {
+    // Auto-adjust scale based on image to fit garment proportionally
+    const img = new Image();
+    img.onload = () => {
+      const aspectRatio = img.width / img.height;
+      let autoScale = 1;
+      
+      // Auto-fit logic: smaller images get boosted, larger ones get reduced
+      if (img.width < 200 || img.height < 200) {
+        autoScale = 1.5; // Boost small images
+      } else if (img.width > 800 || img.height > 800) {
+        autoScale = 0.6; // Reduce very large images
+      } else {
+        autoScale = 1.0; // Normal size for medium images
+      }
+      
+      const newGraphic = {
+        id: Date.now().toString(),
+        type: "image",
+        content: url,
+        placement_zone: "front_center",
+        position_x: 50,
+        position_y: 50,
+        scale: autoScale,
+        rotation: 0,
+        layer_order: design.graphics.length,
+        aspectRatio: aspectRatio
+      };
+
+      addToHistory({
+        ...design,
+        graphics: [...design.graphics, newGraphic]
+      });
+    };
+    img.src = url;
+  };
+
+  const handleAddText = () => {
+    if (!textInput.trim()) return;
+
+    const newGraphic = {
+      id: Date.now().toString(),
+      type: "text",
+      content: textInput,
+      placement_zone: "front_center",
+      position_x: 50,
+      position_y: 50,
+      scale: 1,
+      rotation: 0,
+      layer_order: design.graphics.length,
+      text_properties: {
+        font_family: "Arial",
+        font_size: 24,
+        font_color: "#000000",
+        is_curved: false,
+        curve_intensity: 0
+      }
+    };
+
+    addToHistory({
+      ...design,
+      graphics: [...design.graphics, newGraphic]
+    });
+    setTextInput("");
+  };
+
+  const updateGraphic = (graphicId, updates) => {
+    const updatedGraphics = design.graphics.map(g => 
+      g.id === graphicId ? { ...g, ...updates } : g
+    );
+    addToHistory({
+      ...design,
+      graphics: updatedGraphics
+    });
+  };
+
+  const deleteGraphic = (graphicId) => {
+    addToHistory({
+      ...design,
+      graphics: design.graphics.filter(g => g.id !== graphicId)
+    });
+    setSelectedGraphic(null);
+  };
+
+  const generateAIDesign = async () => {
+    if (!aiPrompt.trim()) return;
+
+    setIsGeneratingAI(true);
+    try {
+      const prompt = `Generate a creative fashion design concept based on this description: "${aiPrompt}". 
+      Suggest specific graphic elements, colors, and placement ideas for a ${design.garment_type.replace(/_/g, ' ')} design. 
+      Be specific about colors, styles, and themes. Format as a clear, actionable design plan.`;
+
+      const result = await base44.integrations.Core.InvokeLLM({
+        prompt: prompt,
+        add_context_from_internet: false
+      });
+
+      alert(`AI Design Suggestion:\n\n${result}\n\nYou can now manually add graphics based on this concept!`);
+    } catch (error) {
+      console.error("Error generating AI design:", error);
+    }
+    setIsGeneratingAI(false);
+    setShowAIDialog(false);
+  };
+
+  const handleShare = (platform) => {
+    const text = `Check out my custom ${design.garment_type.replace(/_/g, ' ')} design on StyleMuse!`;
+    const url = window.location.href;
+
+    const shareUrls = {
+      facebook: `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(url)}`,
+      twitter: `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}`,
+      instagram: url // Instagram requires manual sharing
+    };
+
+    if (platform === 'instagram') {
+      alert('Copy the link and share it on Instagram!');
+      navigator.clipboard.writeText(url);
+    } else {
+      window.open(shareUrls[platform], '_blank', 'width=600,height=400');
+    }
+  };
+
+  const handleSave = () => {
+    if (!designName.trim()) return;
+    
+    saveMutation.mutate({
+      ...design,
+      design_name: designName,
+      estimated_price: parseFloat(calculatePrice()),
+      status: "saved"
+    });
+  };
+
+  if (!user || !design) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-pink-500" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="h-screen flex flex-col bg-gray-50">
+      {/* Top Bar */}
+      <div className="bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between">
+        <div className="flex items-center gap-4">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => navigate(createPageUrl("CustomDesigner"))}
+          >
+            <ArrowLeft className="w-5 h-5" />
+          </Button>
+          <div>
+            <h1 className="text-lg font-semibold text-gray-900">Design Editor</h1>
+            <p className="text-sm text-gray-500">
+              {design.garment_type.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={undo}
+            disabled={historyIndex <= 0}
+            title="Undo"
+          >
+            <Undo className="w-4 h-4" />
+          </Button>
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={redo}
+            disabled={historyIndex >= history.length - 1}
+            title="Redo"
+          >
+            <Redo className="w-4 h-4" />
+          </Button>
+          <Badge variant="outline" className="text-lg font-semibold ml-2">
+            <DollarSign className="w-4 h-4 mr-1" />
+            {calculatePrice()}
+          </Badge>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setShowAIDialog(true)}
+            className="hidden md:flex"
+          >
+            <Sparkles className="w-4 h-4 mr-2" />
+            AI Design
+          </Button>
+          <Button 
+            variant="outline" 
+            size="sm"
+            onClick={() => setShowTryOnDialog(true)}
+          >
+            <Camera className="w-4 h-4 mr-2" />
+            Try On
+          </Button>
+          <Button 
+            variant="outline" 
+            size="sm"
+            onClick={() => setShowShareDialog(true)}
+          >
+            <Share2 className="w-4 h-4 mr-2" />
+            Share
+          </Button>
+          <Button 
+            onClick={() => setShowSaveDialog(true)}
+            className="bg-gradient-to-r from-purple-500 to-pink-500"
+          >
+            <Save className="w-4 h-4 mr-2" />
+            Save
+          </Button>
+        </div>
+      </div>
+
+      {/* Main Editor */}
+      <div className="flex-1 flex overflow-hidden">
+        {/* Left Sidebar */}
+        <div className="w-80 bg-white border-r border-gray-200 overflow-y-auto">
+          <Tabs defaultValue="basics" className="w-full">
+            <TabsList className="w-full grid grid-cols-4">
+              <TabsTrigger value="basics">Basics</TabsTrigger>
+              <TabsTrigger value="graphics">Add</TabsTrigger>
+              <TabsTrigger value="edit">Edit</TabsTrigger>
+              <TabsTrigger value="layers">Layers</TabsTrigger>
+              <TabsTrigger value="ai">AI</TabsTrigger>
+              </TabsList>
+
+            {/* Basics Tab */}
+            <TabsContent value="basics" className="p-4 space-y-6">
+              <div>
+                <Label className="text-sm font-semibold mb-3 block">Fit / Shape</Label>
+                <Select
+                  value={design.fit_shape}
+                  onValueChange={(value) => addToHistory({ ...design, fit_shape: value })}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="regular_fit">Regular Fit</SelectItem>
+                    <SelectItem value="slim_fit">Slim Fit</SelectItem>
+                    <SelectItem value="oversize_relaxed">Oversize</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div>
+                <Label className="text-sm font-semibold mb-3 block">Size</Label>
+                <div className="grid grid-cols-3 gap-2">
+                  {["XS", "S", "M", "L", "XL", "XXL"].map(size => (
+                    <Button
+                      key={size}
+                      variant={design.size === size ? "default" : "outline"}
+                      onClick={() => addToHistory({ ...design, size })}
+                      className={design.size === size ? "bg-purple-500" : ""}
+                    >
+                      {size}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <Label className="text-sm font-semibold mb-3 block">Material</Label>
+                <Select
+                  value={design.material}
+                  onValueChange={(value) => addToHistory({ ...design, material: value })}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Object.entries(materials).map(([key, mat]) => (
+                      <SelectItem key={key} value={key}>
+                        {mat.name} (+${mat.price})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div>
+                <Label className="text-sm font-semibold mb-3 block">Base Color</Label>
+                <div className="grid grid-cols-6 gap-2">
+                  {colors.map(color => (
+                    <button
+                      key={color.hex}
+                      onClick={() => addToHistory({ ...design, base_color: color.hex })}
+                      className={`w-10 h-10 rounded-full border-2 transition-all ${
+                        design.base_color === color.hex 
+                          ? "border-purple-500 scale-110" 
+                          : "border-gray-300"
+                      }`}
+                      style={{ backgroundColor: color.hex }}
+                      title={color.name}
+                    />
+                  ))}
+                </div>
+              </div>
+            </TabsContent>
+
+            {/* Graphics Add Tab */}
+            <TabsContent value="graphics" className="p-4 space-y-6">
+              <div className="grid grid-cols-2 gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  <Upload className="w-4 h-4 mr-2" />
+                  Upload
+                </Button>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={handleImageUpload}
+                  className="hidden"
+                />
+                <Button
+                  variant="outline"
+                  onClick={() => setShowDrawingDialog(true)}
+                >
+                  <Pencil className="w-4 h-4 mr-2" />
+                  Draw
+                </Button>
+              </div>
+
+              <div>
+                <Label className="text-sm font-semibold mb-3 block">Image from URL</Label>
+                <div className="flex gap-2">
+                  <Input
+                    placeholder="Paste image URL..."
+                    value={urlInput}
+                    onChange={(e) => setUrlInput(e.target.value)}
+                    onKeyPress={(e) => {
+                      if (e.key === "Enter") handleUrlAdd();
+                    }}
+                  />
+                  <Button onClick={handleUrlAdd}>
+                    <LinkIcon className="w-4 h-4" />
+                  </Button>
+                </div>
+              </div>
+
+              <div>
+                <Label className="text-sm font-semibold mb-3 block">Graphics Library</Label>
+                <div className="grid grid-cols-3 gap-2 max-h-96 overflow-y-auto">
+                  {graphicsLibrary.map((graphic) => (
+                    <button
+                      key={graphic.id}
+                      onClick={() => handleLibraryAdd(graphic.url)}
+                      className="relative aspect-square rounded-lg overflow-hidden border-2 border-transparent hover:border-purple-500 transition-all group"
+                    >
+                      <img
+                        src={graphic.url}
+                        alt={graphic.name}
+                        className="w-full h-full object-cover group-hover:scale-110 transition-transform"
+                      />
+                      <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                        <Plus className="w-6 h-6 text-white" />
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <Label className="text-sm font-semibold mb-3 block">Add Text</Label>
+                <div className="flex gap-2">
+                  <Input
+                    placeholder="Enter text..."
+                    value={textInput}
+                    onChange={(e) => setTextInput(e.target.value)}
+                    onKeyPress={(e) => {
+                      if (e.key === "Enter") handleAddText();
+                    }}
+                  />
+                  <Button onClick={handleAddText}>
+                    <Type className="w-4 h-4" />
+                  </Button>
+                </div>
+              </div>
+            </TabsContent>
+
+            {/* Edit Tab */}
+            <TabsContent value="edit" className="p-4 space-y-6">
+              {selectedGraphic ? (
+                <>
+                  <h3 className="font-semibold text-lg">Edit Selected</h3>
+                  
+                  <div>
+                    <Label>Position X: {selectedGraphic.position_x}%</Label>
+                    <Slider
+                      value={[selectedGraphic.position_x]}
+                      onValueChange={([val]) => updateGraphic(selectedGraphic.id, { position_x: val })}
+                      max={100}
+                      step={1}
+                    />
+                  </div>
+
+                  <div>
+                    <Label>Position Y: {selectedGraphic.position_y}%</Label>
+                    <Slider
+                      value={[selectedGraphic.position_y]}
+                      onValueChange={([val]) => updateGraphic(selectedGraphic.id, { position_y: val })}
+                      max={100}
+                      step={1}
+                    />
+                  </div>
+
+                  <div>
+                    <Label>Scale: {(selectedGraphic.scale * 100).toFixed(0)}%</Label>
+                    <Slider
+                      value={[selectedGraphic.scale * 100]}
+                      onValueChange={([val]) => updateGraphic(selectedGraphic.id, { scale: val / 100 })}
+                      min={10}
+                      max={200}
+                      step={5}
+                    />
+                  </div>
+
+                  <div>
+                    <Label>Rotation: {selectedGraphic.rotation}°</Label>
+                    <Slider
+                      value={[selectedGraphic.rotation]}
+                      onValueChange={([val]) => updateGraphic(selectedGraphic.id, { rotation: val })}
+                      min={0}
+                      max={360}
+                      step={5}
+                    />
+                  </div>
+
+                  {selectedGraphic.type === "text" && (
+                    <>
+                      <div>
+                        <Label>Font Size: {selectedGraphic.text_properties?.font_size}px</Label>
+                        <Slider
+                          value={[selectedGraphic.text_properties?.font_size || 24]}
+                          onValueChange={([val]) => updateGraphic(selectedGraphic.id, {
+                            text_properties: { ...selectedGraphic.text_properties, font_size: val }
+                          })}
+                          min={12}
+                          max={72}
+                          step={2}
+                        />
+                      </div>
+
+                      <div>
+                        <Label>Text Color</Label>
+                        <Input
+                          type="color"
+                          value={selectedGraphic.text_properties?.font_color || "#000000"}
+                          onChange={(e) => updateGraphic(selectedGraphic.id, {
+                            text_properties: { ...selectedGraphic.text_properties, font_color: e.target.value }
+                          })}
+                        />
+                      </div>
+                    </>
+                  )}
+
+                  <Button
+                    variant="destructive"
+                    className="w-full"
+                    onClick={() => deleteGraphic(selectedGraphic.id)}
+                  >
+                    <Trash2 className="w-4 h-4 mr-2" />
+                    Delete Graphic
+                  </Button>
+                </>
+              ) : (
+                <div className="text-center py-12 text-gray-500">
+                  <ImageIcon className="w-12 h-12 mx-auto mb-3 opacity-30" />
+                  <p>Select a graphic to edit</p>
+                </div>
+              )}
+            </TabsContent>
+
+            {/* Layers Tab */}
+            <TabsContent value="layers" className="p-4 space-y-2">
+              <Label className="text-sm font-semibold block mb-3">
+                Layers ({design.graphics.length})
+              </Label>
+              {design.graphics.length === 0 ? (
+                <p className="text-sm text-gray-500 text-center py-8">
+                  No graphics added yet
+                </p>
+              ) : (
+                design.graphics.map((graphic) => (
+                  <Card
+                    key={graphic.id}
+                    className={`cursor-pointer transition-all ${
+                      selectedGraphic?.id === graphic.id 
+                        ? "border-purple-500 bg-purple-50" 
+                        : ""
+                    }`}
+                    onClick={() => setSelectedGraphic(graphic)}
+                  >
+                    <CardContent className="p-3 flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        {graphic.type === "image" ? (
+                          <ImageIcon className="w-4 h-4" />
+                        ) : (
+                          <Type className="w-4 h-4" />
+                        )}
+                        <span className="text-sm font-medium truncate max-w-[150px]">
+                          {graphic.type === "text" 
+                            ? graphic.content 
+                            : "Image"}
+                        </span>
+                      </div>
+                      <div className="flex gap-1">
+                        {graphic.type === "image" && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-6 w-6"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setEditingImage(graphic);
+                              setShowImageEditor(true);
+                            }}
+                          >
+                            <Palette className="w-3 h-3" />
+                          </Button>
+                        )}
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            deleteGraphic(graphic.id);
+                          }}
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))
+              )}
+            </TabsContent>
+
+            {/* AI Assistant Tab */}
+            <TabsContent value="ai" className="p-4">
+              <AIDesignAssistant
+                design={design}
+                onApplySuggestion={(suggestion) => {
+                  if (suggestion.type === 'color') {
+                    addToHistory({ ...design, base_color: suggestion.value });
+                  } else if (suggestion.type === 'material') {
+                    addToHistory({ ...design, material: suggestion.value });
+                  }
+                }}
+              />
+            </TabsContent>
+            </Tabs>
+            </div>
+
+        {/* Center - 3D Preview */}
+        <div className="flex-1 flex flex-col bg-gradient-to-br from-gray-100 to-gray-200">
+          <div className="flex-1 relative">
+            {use3D ? (
+              <ThreeDGarment 
+                design={design}
+                graphics={design.graphics}
+                onGraphicClick={setSelectedGraphic}
+                selectedGraphicId={selectedGraphic?.id}
+                view={garmentView}
+              />
+            ) : (
+              <div className="flex items-center justify-center h-full p-8">
+                <motion.div
+                  animate={{ rotateY: rotation }}
+                  transition={{ type: "spring", stiffness: 50 }}
+                  className="relative"
+                  style={{ transform: `scale(${zoom})` }}
+                >
+                  <div
+                    className="w-96 h-[500px] rounded-3xl shadow-2xl relative overflow-hidden"
+                    style={{ 
+                      backgroundColor: design.base_color,
+                      boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.25), inset 0 2px 4px 0 rgba(0, 0, 0, 0.06)"
+                    }}
+                  >
+                    {showGrid && (
+                      <div 
+                        className="absolute inset-0 pointer-events-none"
+                        style={{
+                          backgroundImage: "linear-gradient(rgba(0,0,0,.1) 1px, transparent 1px), linear-gradient(90deg, rgba(0,0,0,.1) 1px, transparent 1px)",
+                          backgroundSize: "20px 20px"
+                        }}
+                      />
+                    )}
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <div className="text-9xl opacity-10 select-none">👕</div>
+                      <div 
+                        className="absolute inset-0 opacity-5"
+                        style={{
+                          backgroundImage: "url('data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23000000' fill-opacity='1'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E')"
+                        }}
+                      />
+                      <div 
+                        className="absolute inset-0 pointer-events-none"
+                        style={{
+                          background: "linear-gradient(135deg, rgba(255,255,255,0.3) 0%, transparent 50%, rgba(0,0,0,0.1) 100%)"
+                        }}
+                      />
+                    </div>
+
+                    {design.graphics.map((graphic) => (
+                      <div
+                        key={graphic.id}
+                        onClick={() => setSelectedGraphic(graphic)}
+                        className={`absolute cursor-pointer hover:ring-2 hover:ring-purple-400 transition-all ${
+                          selectedGraphic?.id === graphic.id 
+                            ? "ring-2 ring-purple-500 shadow-lg" 
+                            : ""
+                        }`}
+                        style={{
+                          left: `${graphic.position_x}%`,
+                          top: `${graphic.position_y}%`,
+                          transform: `translate(-50%, -50%) scale(${graphic.scale}) rotate(${graphic.rotation}deg)`,
+                          filter: "drop-shadow(0 4px 6px rgba(0, 0, 0, 0.1))"
+                        }}
+                      >
+                        {graphic.type === "image" ? (
+                          <img
+                            src={graphic.content}
+                            alt="Graphic"
+                            className="max-w-32 max-h-32 object-contain"
+                          />
+                        ) : (
+                          <div
+                            style={{
+                              fontSize: `${graphic.text_properties?.font_size || 24}px`,
+                              color: graphic.text_properties?.font_color || "#000000",
+                              fontFamily: graphic.text_properties?.font_family || "Arial",
+                              textShadow: "0 2px 4px rgba(0, 0, 0, 0.1)"
+                            }}
+                            className="font-bold whitespace-nowrap"
+                          >
+                            {graphic.content}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </motion.div>
+              </div>
+            )}
+          </div>
+
+          {/* 3D Controls */}
+          <div className="bg-white/90 backdrop-blur-sm border-t border-gray-200 p-4 flex flex-wrap items-center justify-center gap-2">
+            <Button
+              variant={use3D ? "default" : "outline"}
+              size="sm"
+              onClick={() => setUse3D(true)}
+            >
+              3D View
+            </Button>
+            <Button
+              variant={!use3D ? "default" : "outline"}
+              size="sm"
+              onClick={() => setUse3D(false)}
+            >
+              2D View
+            </Button>
+            <div className="w-px h-6 bg-gray-300 mx-2" />
+            <Button
+              variant={garmentView === "front" ? "default" : "outline"}
+              size="sm"
+              onClick={() => setGarmentView("front")}
+            >
+              Front
+            </Button>
+            <Button
+              variant={garmentView === "back" ? "default" : "outline"}
+              size="sm"
+              onClick={() => setGarmentView("back")}
+            >
+              Back
+            </Button>
+            <Button
+              variant={garmentView === "side" ? "default" : "outline"}
+              size="sm"
+              onClick={() => setGarmentView("side")}
+            >
+              Side
+            </Button>
+            <div className="w-px h-6 bg-gray-300 mx-2" />
+            <Button
+              variant={showGrid ? "default" : "outline"}
+              size="sm"
+              onClick={() => setShowGrid(!showGrid)}
+            >
+              Grid
+            </Button>
+            {!use3D && (
+              <>
+                <div className="w-px h-6 bg-gray-300 mx-2" />
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onClick={() => setRotation(rotation - 45)}
+                >
+                  <RotateCw className="w-4 h-4 rotate-180" />
+                </Button>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onClick={() => setZoom(Math.max(0.5, zoom - 0.1))}
+                >
+                  <ZoomOut className="w-4 h-4" />
+                </Button>
+                <span className="text-sm font-medium px-4">{(zoom * 100).toFixed(0)}%</span>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onClick={() => setZoom(Math.min(2, zoom + 0.1))}
+                >
+                  <ZoomIn className="w-4 h-4" />
+                </Button>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onClick={() => setRotation(rotation + 45)}
+                >
+                  <RotateCw className="w-4 h-4" />
+                </Button>
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* AI Design Dialog */}
+      <Dialog open={showAIDialog} onOpenChange={setShowAIDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Sparkles className="w-5 h-5 text-purple-500" />
+              AI Design Generator
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p className="text-sm text-gray-600">
+              Describe your design idea and let AI suggest creative concepts!
+            </p>
+            <div>
+              <Label>Design Description</Label>
+              <Input
+                placeholder="e.g., Tropical summer vibes with palm trees and sunset colors"
+                value={aiPrompt}
+                onChange={(e) => setAiPrompt(e.target.value)}
+                className="mt-2"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowAIDialog(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={generateAIDesign}
+              disabled={!aiPrompt.trim() || isGeneratingAI}
+              className="bg-gradient-to-r from-purple-500 to-pink-500"
+            >
+              {isGeneratingAI ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Generating...
+                </>
+              ) : (
+                <>
+                  <Sparkles className="w-4 h-4 mr-2" />
+                  Generate Ideas
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Share Dialog */}
+      <Dialog open={showShareDialog} onOpenChange={setShowShareDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Share Your Design</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p className="text-sm text-gray-600">
+              Share your custom design on social media!
+            </p>
+            <div className="grid grid-cols-3 gap-4">
+              <Button
+                variant="outline"
+                className="flex flex-col items-center gap-2 h-auto py-4"
+                onClick={() => handleShare('facebook')}
+              >
+                <Facebook className="w-8 h-8 text-blue-600" />
+                <span className="text-sm">Facebook</span>
+              </Button>
+              <Button
+                variant="outline"
+                className="flex flex-col items-center gap-2 h-auto py-4"
+                onClick={() => handleShare('twitter')}
+              >
+                <Twitter className="w-8 h-8 text-blue-400" />
+                <span className="text-sm">Twitter</span>
+              </Button>
+              <Button
+                variant="outline"
+                className="flex flex-col items-center gap-2 h-auto py-4"
+                onClick={() => handleShare('instagram')}
+              >
+                <Instagram className="w-8 h-8 text-pink-600" />
+                <span className="text-sm">Instagram</span>
+              </Button>
+            </div>
+            <Button
+              variant="outline"
+              className="w-full"
+              onClick={() => {
+                navigator.clipboard.writeText(window.location.href);
+                alert("Link copied to clipboard!");
+              }}
+            >
+              <LinkIcon className="w-4 h-4 mr-2" />
+              Copy Link
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Drawing Dialog */}
+      <Dialog open={showDrawingDialog} onOpenChange={setShowDrawingDialog}>
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Draw Your Design</DialogTitle>
+          </DialogHeader>
+          <DrawingCanvas
+            onSave={(dataUrl) => {
+              addGraphic(dataUrl);
+              setShowDrawingDialog(false);
+            }}
+            onClose={() => setShowDrawingDialog(false)}
+          />
+        </DialogContent>
+      </Dialog>
+
+      {/* Image Editor Dialog */}
+      <Dialog open={showImageEditor} onOpenChange={setShowImageEditor}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Edit Image</DialogTitle>
+          </DialogHeader>
+          {editingImage && (
+            <ImageEditor
+              imageUrl={editingImage.content}
+              onSave={(edited) => {
+                updateGraphic(editingImage.id, {
+                  content: edited.url,
+                  filters: edited.filters
+                });
+                setShowImageEditor(false);
+                setEditingImage(null);
+              }}
+              onClose={() => {
+                setShowImageEditor(false);
+                setEditingImage(null);
+              }}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Virtual Try-On Dialog */}
+      <VirtualTryOn 
+        design={design}
+        isOpen={showTryOnDialog}
+        onClose={() => setShowTryOnDialog(false)}
+      />
+
+      {/* Save Dialog */}
+      <Dialog open={showSaveDialog} onOpenChange={setShowSaveDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Save Your Design</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>Design Name</Label>
+              <Input
+                placeholder="e.g., Summer Vibes T-Shirt"
+                value={designName}
+                onChange={(e) => setDesignName(e.target.value)}
+              />
+            </div>
+            <div className="bg-gray-50 rounded-lg p-4">
+              <p className="text-sm font-medium mb-2">Summary:</p>
+              <div className="space-y-1 text-sm text-gray-600">
+                <p>• Garment: {design.garment_type.replace(/_/g, ' ')}</p>
+                <p>• Material: {materials[design.material]?.name}</p>
+                <p>• Graphics: {design.graphics.length}</p>
+                <p className="font-semibold text-gray-900 mt-2">
+                  Price: ${calculatePrice()}
+                </p>
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowSaveDialog(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleSave}
+              disabled={!designName.trim() || saveMutation.isPending}
+              className="bg-gradient-to-r from-purple-500 to-pink-500"
+            >
+              {saveMutation.isPending ? "Saving..." : "Save Design"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}

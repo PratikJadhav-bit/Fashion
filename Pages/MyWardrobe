@@ -1,0 +1,671 @@
+import React from "react";
+import { base44 } from "@/api/base44Client";
+import { createPageUrl } from "@/utils";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
+import { Badge } from "@/components/ui/badge";
+import { motion, AnimatePresence } from "framer-motion";
+import {
+  Shirt,
+  Plus,
+  Upload,
+  X,
+  Edit,
+  Trash2,
+  Search,
+  Filter,
+  Sparkles,
+  Tag
+} from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import ProductSuggestions from "../components/recommendations/ProductSuggestions";
+import WardrobeInsights from "../components/wardrobe/WardrobeInsights";
+import SmartWardrobeAnalyzer from "../components/wardrobe/SmartWardrobeAnalyzer";
+
+export default function MyWardrobe() {
+  const queryClient = useQueryClient();
+  const [user, setUser] = React.useState(null);
+  const [showAddDialog, setShowAddDialog] = React.useState(false);
+  const [editingItem, setEditingItem] = React.useState(null);
+  const [searchQuery, setSearchQuery] = React.useState("");
+  const [categoryFilter, setCategoryFilter] = React.useState("all");
+  const [isUploading, setIsUploading] = React.useState(false);
+  const [isAnalyzing, setIsAnalyzing] = React.useState(false);
+  const [tagInput, setTagInput] = React.useState("");
+
+  const [formData, setFormData] = React.useState({
+    item_name: "",
+    category: "",
+    colors: [],
+    brand: "",
+    image_url: "",
+    style_tags: [],
+    season: [],
+    notes: ""
+  });
+
+  React.useEffect(() => {
+    const loadUser = async () => {
+      try {
+        const currentUser = await base44.auth.me();
+        setUser(currentUser);
+      } catch (error) {
+        base44.auth.redirectToLogin(createPageUrl("MyWardrobe"));
+      }
+    };
+    loadUser();
+  }, []);
+
+  const { data: wardrobeItems = [], isLoading } = useQuery({
+    queryKey: ['wardrobe', user?.email],
+    queryFn: () => base44.entities.WardrobeItem.filter({ user_email: user.email }, '-created_date'),
+    enabled: !!user?.email,
+    initialData: [],
+  });
+
+  const { data: userProfile } = useQuery({
+    queryKey: ['userProfile', user?.email],
+    queryFn: async () => {
+      if (!user?.email) return null;
+      const profiles = await base44.entities.UserProfile.filter({ user_email: user.email });
+      return profiles[0] || null;
+    },
+    enabled: !!user?.email,
+  });
+
+  const createMutation = useMutation({
+    mutationFn: (data) => base44.entities.WardrobeItem.create({
+      ...data,
+      user_email: user.email
+    }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['wardrobe'] });
+      resetForm();
+      setShowAddDialog(false);
+    },
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: ({ id, data }) => base44.entities.WardrobeItem.update(id, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['wardrobe'] });
+      resetForm();
+      setShowAddDialog(false);
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id) => base44.entities.WardrobeItem.delete(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['wardrobe'] });
+    },
+  });
+
+  const handleFileUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsUploading(true);
+    setIsAnalyzing(true);
+    try {
+      // Upload the file
+      const { file_url } = await base44.integrations.Core.UploadFile({ file });
+      setFormData({ ...formData, image_url: file_url });
+
+      // AI analyze the image for category and tags
+      const analysis = await base44.integrations.Core.InvokeLLM({
+        prompt: `Analyze this clothing item image and provide:
+1. Category (one of: tops, bottoms, dresses, outerwear, shoes, accessories, activewear, formal)
+2. Style tags (3-5 descriptive tags like casual, elegant, sporty, vintage, etc.)
+3. Dominant colors (1-3 colors)
+4. Suggested item name
+
+Return JSON format.`,
+        file_urls: [file_url],
+        response_json_schema: {
+          type: "object",
+          properties: {
+            category: { type: "string" },
+            style_tags: { type: "array", items: { type: "string" } },
+            colors: { type: "array", items: { type: "string" } },
+            suggested_name: { type: "string" }
+          }
+        }
+      });
+
+      // Pre-fill form with AI suggestions
+      setFormData(prev => ({
+        ...prev,
+        image_url: file_url,
+        category: analysis.category || prev.category,
+        style_tags: analysis.style_tags || prev.style_tags,
+        colors: analysis.colors || prev.colors,
+        item_name: analysis.suggested_name || prev.item_name
+      }));
+    } catch (error) {
+      console.error("Error uploading/analyzing file:", error);
+    }
+    setIsUploading(false);
+    setIsAnalyzing(false);
+  };
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (editingItem) {
+      updateMutation.mutate({ id: editingItem.id, data: formData });
+    } else {
+      createMutation.mutate(formData);
+    }
+  };
+
+  const handleEdit = (item) => {
+    setEditingItem(item);
+    setFormData({
+      item_name: item.item_name,
+      category: item.category,
+      colors: item.colors || [],
+      brand: item.brand || "",
+      image_url: item.image_url || "",
+      style_tags: item.style_tags || [],
+      season: item.season || [],
+      notes: item.notes || ""
+    });
+    setShowAddDialog(true);
+  };
+
+  const resetForm = () => {
+    setFormData({
+      item_name: "",
+      category: "",
+      colors: [],
+      brand: "",
+      image_url: "",
+      style_tags: [],
+      season: [],
+      notes: ""
+    });
+    setEditingItem(null);
+  };
+
+  const addTag = () => {
+    if (tagInput && !formData.style_tags.includes(tagInput.toLowerCase())) {
+      setFormData({
+        ...formData,
+        style_tags: [...formData.style_tags, tagInput.toLowerCase()]
+      });
+      setTagInput("");
+    }
+  };
+
+  const categories = [
+    { value: "tops", label: "Tops" },
+    { value: "bottoms", label: "Bottoms" },
+    { value: "dresses", label: "Dresses" },
+    { value: "outerwear", label: "Outerwear" },
+    { value: "shoes", label: "Shoes" },
+    { value: "accessories", label: "Accessories" },
+    { value: "activewear", label: "Activewear" },
+    { value: "formal", label: "Formal" }
+  ];
+
+  const seasons = ["spring", "summer", "fall", "winter"];
+
+  const filteredItems = wardrobeItems.filter(item => {
+    const matchesSearch = item.item_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                          item.brand?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                          item.style_tags?.some(tag => tag.toLowerCase().includes(searchQuery.toLowerCase()));
+    const matchesCategory = categoryFilter === "all" || item.category === categoryFilter;
+    return matchesSearch && matchesCategory;
+  });
+
+  if (!user) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-pink-500" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="p-4 md:p-8 max-w-7xl mx-auto">
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="mb-8"
+      >
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-purple-400 to-pink-400 flex items-center justify-center">
+              <Shirt className="w-6 h-6 text-white" />
+            </div>
+            <div>
+              <h1 className="text-3xl font-bold text-gray-900">My Wardrobe</h1>
+              <p className="text-gray-600">{wardrobeItems.length} items in your collection</p>
+            </div>
+          </div>
+          <Button
+            onClick={() => {
+              resetForm();
+              setShowAddDialog(true);
+            }}
+            className="bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white"
+          >
+            <Plus className="w-4 h-4 mr-2" />
+            Add Item
+          </Button>
+        </div>
+      </motion.div>
+
+      <Tabs defaultValue="items" className="w-full">
+        <TabsList className="mb-6">
+          <TabsTrigger value="items">My Items</TabsTrigger>
+          <TabsTrigger value="insights">Wardrobe Insights</TabsTrigger>
+          <TabsTrigger value="ai-stylist">AI Stylist</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="items" className="space-y-6">
+          {/* Filters */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.1 }}
+          >
+            <Card>
+              <CardContent className="p-4">
+                <div className="flex flex-col md:flex-row gap-4">
+                  <div className="flex-1 relative">
+                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+                    <Input
+                      placeholder="Search by name, brand or tag..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="pl-10"
+                    />
+                  </div>
+                  <div className="w-full md:w-48">
+                    <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="All Categories" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Categories</SelectItem>
+                        {categories.map(cat => (
+                          <SelectItem key={cat.value} value={cat.value}>
+                            {cat.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </motion.div>
+
+          {/* Items Grid */}
+          <AnimatePresence mode="wait">
+            {isLoading ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {[...Array(6)].map((_, i) => (
+                  <Card key={i}>
+                    <Skeleton className="h-48 w-full rounded-t-lg" />
+                    <CardContent className="p-4 space-y-2">
+                      <Skeleton className="h-4 w-3/4" />
+                      <Skeleton className="h-3 w-1/2" />
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            ) : filteredItems.length === 0 ? (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                className="text-center py-16"
+              >
+                <div className="w-20 h-20 rounded-full bg-gradient-to-br from-purple-100 to-pink-100 flex items-center justify-center mx-auto mb-4">
+                  <Shirt className="w-10 h-10 text-purple-500" />
+                </div>
+                <h3 className="text-xl font-semibold text-gray-900 mb-2">
+                  {searchQuery || categoryFilter !== "all" ? "No items found" : "Your wardrobe is empty"}
+                </h3>
+                <p className="text-gray-600 mb-6">
+                  {searchQuery || categoryFilter !== "all" 
+                    ? "Try adjusting your filters"
+                    : "Start adding your clothes to get personalized outfit suggestions"}
+                </p>
+                {!searchQuery && categoryFilter === "all" && (
+                  <Button
+                    onClick={() => {
+                      resetForm();
+                      setShowAddDialog(true);
+                    }}
+                    className="bg-gradient-to-r from-purple-500 to-pink-500"
+                  >
+                    <Plus className="w-4 h-4 mr-2" />
+                    Add Your First Item
+                  </Button>
+                )}
+              </motion.div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {filteredItems.map((item) => (
+                  <motion.div
+                    key={item.id}
+                    initial={{ opacity: 0, scale: 0.9 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.9 }}
+                    transition={{ duration: 0.2 }}
+                  >
+                    <Card className="group hover:shadow-xl transition-shadow duration-300 overflow-hidden">
+                      {item.image_url && (
+                        <div className="relative h-48 overflow-hidden bg-gray-100">
+                          <img
+                            src={item.image_url}
+                            alt={item.item_name}
+                            className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300"
+                          />
+                        </div>
+                      )}
+                      <CardContent className="p-4">
+                        <div className="flex justify-between items-start mb-2">
+                          <h3 className="font-semibold text-lg text-gray-900 line-clamp-1">
+                            {item.item_name}
+                          </h3>
+                          <div className="flex gap-1">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8"
+                              onClick={() => handleEdit(item)}
+                            >
+                              <Edit className="w-4 h-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 text-red-500 hover:text-red-600"
+                              onClick={() => deleteMutation.mutate(item.id)}
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          </div>
+                        </div>
+
+                        {item.brand && (
+                          <p className="text-sm text-gray-500 mb-2">{item.brand}</p>
+                        )}
+
+                        <div className="flex flex-wrap gap-2 mb-3">
+                          <Badge variant="secondary" className="text-xs">
+                            {categories.find(c => c.value === item.category)?.label}
+                          </Badge>
+                          {item.colors?.slice(0, 2).map(color => (
+                            <Badge key={color} variant="outline" className="text-xs">
+                              {color}
+                            </Badge>
+                          ))}
+                          {item.style_tags?.slice(0, 2).map(tag => (
+                            <Badge key={tag} className="text-xs bg-purple-100 text-purple-700">
+                              <Tag className="w-3 h-3 mr-1" />
+                              {tag}
+                            </Badge>
+                          ))}
+                        </div>
+
+                        {item.times_worn !== undefined && (
+                          <p className="text-xs text-gray-500">
+                            Worn {item.times_worn} {item.times_worn === 1 ? 'time' : 'times'}
+                          </p>
+                        )}
+                      </CardContent>
+                    </Card>
+                  </motion.div>
+                ))}
+              </div>
+            )}
+          </AnimatePresence>
+        </TabsContent>
+
+        <TabsContent value="insights">
+          <WardrobeInsights userEmail={user?.email} />
+        </TabsContent>
+
+        <TabsContent value="ai-stylist">
+          <SmartWardrobeAnalyzer userEmail={user?.email} userProfile={userProfile} />
+        </TabsContent>
+      </Tabs>
+
+      {/* Add/Edit Dialog */}
+      <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>
+              {editingItem ? "Edit Item" : "Add New Item"}
+            </DialogTitle>
+          </DialogHeader>
+
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div>
+              <Label htmlFor="image">Upload Photo</Label>
+              <div className="flex gap-4 items-start">
+                <Input
+                  id="image"
+                  type="file"
+                  accept="image/*"
+                  onChange={handleFileUpload}
+                  disabled={isUploading}
+                />
+                {formData.image_url && (
+                  <img
+                    src={formData.image_url}
+                    alt="Preview"
+                    className="w-16 h-16 object-cover rounded border"
+                  />
+                )}
+              </div>
+              {isUploading && (
+                <p className="text-sm text-gray-500 mt-1">Uploading...</p>
+              )}
+              {isAnalyzing && (
+                <div className="flex items-center gap-2 mt-2 text-sm text-purple-600">
+                  <Sparkles className="w-4 h-4 animate-pulse" />
+                  <span>AI analyzing your item...</span>
+                </div>
+              )}
+            </div>
+
+            <div className="grid md:grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="item_name">Item Name *</Label>
+                <Input
+                  id="item_name"
+                  value={formData.item_name}
+                  onChange={(e) => setFormData({ ...formData, item_name: e.target.value })}
+                  placeholder="e.g., Blue Denim Jacket"
+                  required
+                />
+              </div>
+
+              <div>
+                <Label htmlFor="category">Category *</Label>
+                <Select
+                  value={formData.category}
+                  onValueChange={(value) => setFormData({ ...formData, category: value })}
+                  required
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select category" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {categories.map(cat => (
+                      <SelectItem key={cat.value} value={cat.value}>
+                        {cat.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div>
+              <Label htmlFor="brand">Brand</Label>
+              <Input
+                id="brand"
+                value={formData.brand}
+                onChange={(e) => setFormData({ ...formData, brand: e.target.value })}
+                placeholder="e.g., Levi's"
+              />
+            </div>
+
+            <div>
+              <Label>Colors</Label>
+              <Input
+                placeholder="Add a color and press Enter"
+                onKeyPress={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    const color = e.target.value.trim();
+                    if (color && !formData.colors.includes(color)) {
+                      setFormData({
+                        ...formData,
+                        colors: [...formData.colors, color]
+                      });
+                      e.target.value = "";
+                    }
+                  }
+                }}
+              />
+              <div className="flex flex-wrap gap-2 mt-2">
+                {formData.colors.map(color => (
+                  <Badge key={color} variant="secondary">
+                    {color}
+                    <X
+                      className="ml-1 w-3 h-3 cursor-pointer"
+                      onClick={() => setFormData({
+                        ...formData,
+                        colors: formData.colors.filter(c => c !== color)
+                      })}
+                    />
+                  </Badge>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <Label>Style Tags</Label>
+              <div className="flex gap-2 mb-2">
+                <Input
+                  placeholder="Add a tag (e.g., casual, elegant)"
+                  value={tagInput}
+                  onChange={(e) => setTagInput(e.target.value)}
+                  onKeyPress={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      addTag();
+                    }
+                  }}
+                />
+                <Button type="button" onClick={addTag} variant="outline">
+                  <Tag className="w-4 h-4 mr-1" />
+                  Add
+                </Button>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {formData.style_tags.map(tag => (
+                  <Badge key={tag} className="bg-purple-100 text-purple-700">
+                    {tag}
+                    <X
+                      className="ml-1 w-3 h-3 cursor-pointer"
+                      onClick={() => setFormData({
+                        ...formData,
+                        style_tags: formData.style_tags.filter(t => t !== tag)
+                      })}
+                    />
+                  </Badge>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <Label>Seasons</Label>
+              <div className="flex flex-wrap gap-2 mt-2">
+                {seasons.map(season => (
+                  <Badge
+                    key={season}
+                    variant={formData.season?.includes(season) ? "default" : "outline"}
+                    className="cursor-pointer"
+                    onClick={() => {
+                      const current = formData.season || [];
+                      if (current.includes(season)) {
+                        setFormData({
+                          ...formData,
+                          season: current.filter(s => s !== season)
+                        });
+                      } else {
+                        setFormData({
+                          ...formData,
+                          season: [...current, season]
+                        });
+                      }
+                    }}
+                  >
+                    {season.charAt(0).toUpperCase() + season.slice(1)}
+                  </Badge>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <Label htmlFor="notes">Notes</Label>
+              <Textarea
+                id="notes"
+                value={formData.notes}
+                onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+                placeholder="Any additional details..."
+                rows={3}
+              />
+            </div>
+
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setShowAddDialog(false);
+                  resetForm();
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                disabled={createMutation.isPending || updateMutation.isPending}
+                className="bg-gradient-to-r from-purple-500 to-pink-500"
+              >
+                {createMutation.isPending || updateMutation.isPending
+                  ? "Saving..."
+                  : editingItem
+                  ? "Update Item"
+                  : "Add Item"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+

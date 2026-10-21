@@ -1,0 +1,210 @@
+{
+  "name": "CustomDesign",
+  "type": "object",
+  "properties": {
+    "user_email": {
+      "type": "string",
+      "description": "Email of the user who created this design"
+    },
+    "design_name": {
+      "type": "string",
+      "description": "User-given name for this design"
+    },
+    "garment_type": {
+      "type": "string",
+      "enum": [
+        "tshirt_crewneck",
+        "tshirt_vneck",
+        "hoodie_pullover",
+        "hoodie_zipup",
+        "sweatshirt",
+        "tank_top",
+        "pants_joggers",
+        "pants_denim",
+        "pants_chinos",
+        "shorts",
+        "jacket_bomber",
+        "jacket_denim"
+      ],
+      "description": "Type of garment being customized"
+    },
+    "fit_shape": {
+      "type": "string",
+      "enum": [
+        "regular_fit",
+        "slim_fit",
+        "oversize_relaxed",
+        "straight_leg",
+        "tapered",
+        "bootcut"
+      ],
+      "description": "Fit or shape of the garment"
+    },
+    "size": {
+      "type": "string",
+      "enum": [
+        "XS",
+        "S",
+        "M",
+        "L",
+        "XL",
+        "XXL"
+      ],
+      "description": "Standard size"
+    },
+    "material": {
+      "type": "string",
+      "enum": [
+        "cotton_ringspun",
+        "cotton_jersey",
+        "cotton_pima",
+        "polyester_blend_50_50",
+        "tri_blend",
+        "fleece"
+      ],
+      "description": "Material/fabric type"
+    },
+    "base_color": {
+      "type": "string",
+      "description": "Hex color code for base garment color"
+    },
+    "graphics": {
+      "type": "array",
+      "description": "Array of graphic elements on the garment",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Unique ID for this graphic element"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "image",
+              "text",
+              "vector"
+            ],
+            "description": "Type of graphic element"
+          },
+          "content": {
+            "type": "string",
+            "description": "URL for image/vector or text content"
+          },
+          "placement_zone": {
+            "type": "string",
+            "enum": [
+              "front_center",
+              "left_chest",
+              "right_chest",
+              "back_center",
+              "back_shoulder",
+              "left_sleeve",
+              "right_sleeve",
+              "pocket",
+              "hood"
+            ],
+            "description": "Predefined placement zone"
+          },
+          "position_x": {
+            "type": "number",
+            "description": "X coordinate position (percentage)"
+          },
+          "position_y": {
+            "type": "number",
+            "description": "Y coordinate position (percentage)"
+          },
+          "scale": {
+            "type": "number",
+            "default": 1,
+            "description": "Scale factor (1 = 100%)"
+          },
+          "rotation": {
+            "type": "number",
+            "default": 0,
+            "description": "Rotation in degrees"
+          },
+          "layer_order": {
+            "type": "number",
+            "description": "Z-index for layering graphics"
+          },
+          "text_properties": {
+            "type": "object",
+            "properties": {
+              "font_family": {
+                "type": "string"
+              },
+              "font_size": {
+                "type": "number"
+              },
+              "font_color": {
+                "type": "string"
+              },
+              "is_curved": {
+                "type": "boolean"
+              },
+              "curve_intensity": {
+                "type": "number"
+              }
+            }
+          }
+        }
+      }
+    },
+    "estimated_price": {
+      "type": "number",
+      "description": "Calculated price for this custom design"
+    },
+    "thumbnail_url": {
+      "type": "string",
+      "description": "Preview image of the design"
+    },
+    "is_public": {
+      "type": "boolean",
+      "default": false,
+      "description": "Whether design is shared publicly"
+    },
+    "likes_count": {
+      "type": "number",
+      "default": 0,
+      "description": "Number of likes from community"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "draft",
+        "saved",
+        "ordered",
+        "completed"
+      ],
+      "default": "draft",
+      "description": "Design status"
+    },
+    "body_measurements": {
+      "type": "object",
+      "description": "User's body measurements for fit recommendation",
+      "properties": {
+        "height_cm": {
+          "type": "number"
+        },
+        "weight_kg": {
+          "type": "number"
+        },
+        "chest_cm": {
+          "type": "number"
+        },
+        "waist_cm": {
+          "type": "number"
+        }
+      }
+    }
+  },
+  "required": [
+    "user_email",
+    "garment_type",
+    "fit_shape",
+    "size",
+    "material",
+    "base_color"
+  ]
+}

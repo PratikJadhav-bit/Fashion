@@ -1,0 +1,87 @@
+{
+  "name": "WardrobeItem",
+  "type": "object",
+  "properties": {
+    "user_email": {
+      "type": "string",
+      "description": "Email of the user who owns this item"
+    },
+    "item_name": {
+      "type": "string",
+      "description": "Name/description of the clothing item"
+    },
+    "category": {
+      "type": "string",
+      "enum": [
+        "tops",
+        "bottoms",
+        "dresses",
+        "outerwear",
+        "shoes",
+        "accessories",
+        "activewear",
+        "formal"
+      ],
+      "description": "Category of clothing"
+    },
+    "colors": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Colors of the item"
+    },
+    "brand": {
+      "type": "string",
+      "description": "Brand name"
+    },
+    "image_url": {
+      "type": "string",
+      "description": "Photo of the item"
+    },
+    "style_tags": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Style tags (casual, formal, party, etc.)"
+    },
+    "season": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "spring",
+          "summer",
+          "fall",
+          "winter"
+        ]
+      },
+      "description": "Suitable seasons"
+    },
+    "times_worn": {
+      "type": "number",
+      "default": 0,
+      "description": "Number of times worn"
+    },
+    "last_worn_date": {
+      "type": "string",
+      "format": "date",
+      "description": "Last time this item was worn"
+    },
+    "purchase_date": {
+      "type": "string",
+      "format": "date",
+      "description": "When the item was purchased"
+    },
+    "notes": {
+      "type": "string",
+      "description": "Additional notes about the item"
+    }
+  },
+  "required": [
+    "user_email",
+    "item_name",
+    "category"
+  ]
+}

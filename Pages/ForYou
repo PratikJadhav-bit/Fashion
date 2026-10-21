@@ -1,0 +1,576 @@
+import React from "react";
+import { base44 } from "@/api/base44Client";
+import { createPageUrl } from "@/utils";
+import { useNavigate } from "react-router-dom";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { motion } from "framer-motion";
+import {
+  Sparkles,
+  Heart,
+  ShoppingBag,
+  ExternalLink,
+  Loader2,
+  BookmarkPlus,
+  Check,
+  TrendingUp,
+  Shirt
+} from "lucide-react";
+import { Skeleton } from "@/components/ui/skeleton";
+import AuthRequiredModal, { useAuthRequired } from "../components/auth/AuthRequiredModal";
+
+export default function ForYou() {
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const { user, isLoading: authLoading, isAuthenticated, showAuthModal, authModalConfig, requireAuth, closeAuthModal } = useAuthRequired();
+  const [aiRecommendations, setAiRecommendations] = React.useState(null);
+  const [isLoadingAI, setIsLoadingAI] = React.useState(false);
+
+  const { data: userProfile } = useQuery({
+    queryKey: ['userProfile', user?.email],
+    queryFn: async () => {
+      const profiles = await base44.entities.UserProfile.filter({ user_email: user.email });
+      return profiles[0];
+    },
+    enabled: !!user?.email,
+  });
+
+  const { data: outfitHistory = [] } = useQuery({
+    queryKey: ['outfitHistory', user?.email],
+    queryFn: () => base44.entities.OutfitHistory.filter({ user_email: user.email }, '-created_date', 20),
+    enabled: !!user?.email,
+    initialData: [],
+  });
+
+  const { data: wardrobeItems = [] } = useQuery({
+    queryKey: ['wardrobe', user?.email],
+    queryFn: () => base44.entities.WardrobeItem.filter({ user_email: user.email }),
+    enabled: !!user?.email,
+    initialData: [],
+  });
+
+  const { data: wishlist = [] } = useQuery({
+    queryKey: ['wishlist', user?.email],
+    queryFn: () => base44.entities.Wishlist?.filter({ user_email: user.email }) || [],
+    enabled: !!user?.email,
+    initialData: [],
+  });
+
+  const { data: affiliateProducts = [] } = useQuery({
+    queryKey: ['affiliateProducts'],
+    queryFn: () => base44.entities.AffiliateProduct.filter({ is_active: true }),
+    initialData: [],
+  });
+
+  // Generate AI recommendations
+  React.useEffect(() => {
+    if (user && userProfile && !aiRecommendations && !isLoadingAI) {
+      generateAIRecommendations();
+    }
+  }, [user, userProfile]);
+
+  const generateAIRecommendations = async () => {
+    if (!userProfile) return;
+    
+    setIsLoadingAI(true);
+    try {
+      // Analyze user data
+      const highRatedOutfits = outfitHistory.filter(o => o.rating >= 4);
+      const favoriteOccasions = {};
+      outfitHistory.forEach(o => {
+        favoriteOccasions[o.occasion_type] = (favoriteOccasions[o.occasion_type] || 0) + 1;
+      });
+
+      const wardrobeCategories = {};
+      wardrobeItems.forEach(item => {
+        wardrobeCategories[item.category] = (wardrobeCategories[item.category] || 0) + 1;
+      });
+
+      const prompt = `Analyze this user's fashion profile and recommend products:
+
+User Profile:
+- Style Preferences: ${userProfile.style_preferences?.join(', ') || 'Not set'}
+- Favorite Colors: ${userProfile.favorite_colors?.join(', ') || 'Not set'}
+- Body Type: ${userProfile.body_type || 'Not set'}
+- Budget: ${userProfile.budget_range || 'Not set'}
+- Style DNA: ${JSON.stringify(userProfile.style_dna) || 'Not taken'}
+
+Wardrobe Analysis:
+- Categories owned: ${JSON.stringify(wardrobeCategories)}
+- Total items: ${wardrobeItems.length}
+
+Outfit History:
+- Total outfits: ${outfitHistory.length}
+- High-rated occasions: ${highRatedOutfits.map(o => o.occasion_type).join(', ')}
+- Favorite occasions: ${JSON.stringify(favoriteOccasions)}
+
+Based on this data, provide:
+1. Product categories they should shop for
+2. Specific style recommendations
+3. Colors that would complement their wardrobe
+4. Items they're missing for a complete wardrobe
+5. Trending items that match their style`;
+
+      const result = await base44.integrations.Core.InvokeLLM({
+        prompt,
+        add_context_from_internet: true,
+        response_json_schema: {
+          type: "object",
+          properties: {
+            recommended_categories: { type: "array", items: { type: "string" } },
+            style_recommendations: { type: "array", items: { type: "string" } },
+            color_suggestions: { type: "array", items: { type: "string" } },
+            wardrobe_gaps: { type: "array", items: { type: "string" } },
+            trending_matches: { type: "array", items: { type: "string" } },
+            personalized_message: { type: "string" }
+          }
+        }
+      });
+
+      // Match products based on AI recommendations
+      const matchedProducts = affiliateProducts.filter(product => {
+        const matchesCategory = result.recommended_categories?.some(cat => 
+          product.category.toLowerCase().includes(cat.toLowerCase())
+        );
+        const matchesColor = result.color_suggestions?.some(color => 
+          product.color?.toLowerCase().includes(color.toLowerCase())
+        );
+        const matchesStyle = result.style_recommendations?.some(style => 
+          product.style_tags?.some(tag => tag.toLowerCase().includes(style.toLowerCase()))
+        );
+        return matchesCategory || matchesColor || matchesStyle;
+      });
+
+      setAiRecommendations({
+        ...result,
+        matchedProducts: matchedProducts.slice(0, 12)
+      });
+    } catch (error) {
+      console.error("Error generating AI recommendations:", error);
+    }
+    setIsLoadingAI(false);
+  };
+
+  // Wishlist mutation
+  const addToWishlistMutation = useMutation({
+    mutationFn: async (product) => {
+      const existing = wishlist.find(w => w.product_id === product.id);
+      if (existing) {
+        return base44.entities.Wishlist.delete(existing.id);
+      }
+      return base44.entities.Wishlist.create({
+        user_email: user.email,
+        product_id: product.id,
+        product_name: product.product_name,
+        product_url: product.product_url,
+        image_url: product.image_url,
+        price: product.price
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['wishlist'] });
+    }
+  });
+
+  const isInWishlist = (productId) => wishlist.some(w => w.product_id === productId);
+
+  if (authLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-pink-500" />
+      </div>
+    );
+  }
+
+  const handleAddToWishlist = (product, e) => {
+    e?.stopPropagation();
+    if (!requireAuth({
+      title: "Save to Wishlist",
+      message: "Sign in to save your favorite products and access them anytime."
+    })) return;
+    addToWishlistMutation.mutate(product);
+  };
+
+  const handleGenerateAI = () => {
+    if (!requireAuth({
+      title: "Get AI Recommendations",
+      message: "Sign in to receive personalized product recommendations based on your style profile."
+    })) return;
+    generateAIRecommendations();
+  };
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-purple-50 via-pink-50 to-orange-50 p-4 md:p-8">
+      <div className="max-w-6xl mx-auto">
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="mb-8"
+        >
+          <div className="flex items-center gap-3 mb-2">
+            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-purple-400 to-pink-400 flex items-center justify-center">
+              <Sparkles className="w-6 h-6 text-white" />
+            </div>
+            <div>
+              <h1 className="text-3xl font-bold text-gray-900">For You</h1>
+              <p className="text-gray-600">Personalized picks based on your style</p>
+            </div>
+          </div>
+        </motion.div>
+
+        <Tabs defaultValue={user ? "recommendations" : "trending"} className="w-full">
+          <TabsList className="mb-6">
+            <TabsTrigger value="recommendations">AI Picks</TabsTrigger>
+            <TabsTrigger value="wishlist">
+              Wishlist ({user ? wishlist.length : 0})
+            </TabsTrigger>
+            <TabsTrigger value="trending">Trending</TabsTrigger>
+          </TabsList>
+
+          {/* AI Recommendations */}
+          <TabsContent value="recommendations">
+            {!user ? (
+              <Card>
+                <CardContent className="p-12 text-center">
+                  <div className="w-16 h-16 rounded-full bg-gradient-to-br from-purple-100 to-pink-100 flex items-center justify-center mx-auto mb-4">
+                    <Sparkles className="w-8 h-8 text-purple-500" />
+                  </div>
+                  <h3 className="text-xl font-semibold text-gray-900 mb-2">Get Personalized AI Picks</h3>
+                  <p className="text-gray-600 mb-6">
+                    Sign in to receive AI-powered recommendations tailored to your unique style
+                  </p>
+                  <Button
+                    onClick={() => requireAuth({
+                      title: "AI Style Recommendations",
+                      message: "Create an account to unlock personalized AI fashion picks based on your profile."
+                    })}
+                    className="bg-gradient-to-r from-pink-500 to-purple-500"
+                  >
+                    Sign In for AI Picks
+                  </Button>
+                </CardContent>
+              </Card>
+            ) : isLoadingAI ? (
+              <div className="space-y-6">
+                <Card>
+                  <CardContent className="p-6">
+                    <div className="flex items-center gap-3 mb-4">
+                      <Loader2 className="w-6 h-6 animate-spin text-purple-500" />
+                      <span>Analyzing your style profile...</span>
+                    </div>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                      {[...Array(4)].map((_, i) => (
+                        <Skeleton key={i} className="aspect-square rounded-lg" />
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+            ) : aiRecommendations ? (
+              <div className="space-y-6">
+                {/* Personalized Message */}
+                <Card className="bg-gradient-to-r from-purple-100 to-pink-100 border-purple-200">
+                  <CardContent className="p-6">
+                    <div className="flex items-start gap-3">
+                      <Sparkles className="w-6 h-6 text-purple-600 mt-1" />
+                      <div>
+                        <h3 className="font-semibold text-lg mb-1">Your Style Insights</h3>
+                        <p className="text-gray-700">{aiRecommendations.personalized_message}</p>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Style Recommendations */}
+                {aiRecommendations.style_recommendations?.length > 0 && (
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="flex items-center gap-2">
+                        <Shirt className="w-5 h-5 text-purple-500" />
+                        Style Recommendations
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="flex flex-wrap gap-2">
+                        {aiRecommendations.style_recommendations.map((rec, i) => (
+                          <Badge key={i} variant="outline" className="text-sm py-1 px-3">
+                            {rec}
+                          </Badge>
+                        ))}
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {/* Color Suggestions */}
+                {aiRecommendations.color_suggestions?.length > 0 && (
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>Colors For You</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="flex flex-wrap gap-3">
+                        {aiRecommendations.color_suggestions.map((color, i) => (
+                          <div key={i} className="flex items-center gap-2 bg-gray-50 rounded-full px-4 py-2">
+                            <div className="w-4 h-4 rounded-full border" style={{ backgroundColor: color.toLowerCase() }} />
+                            <span className="text-sm capitalize">{color}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {/* Matched Products */}
+                {aiRecommendations.matchedProducts?.length > 0 && (
+                  <div>
+                    <h2 className="text-xl font-semibold mb-4">Handpicked For You</h2>
+                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                      {aiRecommendations.matchedProducts.map((product) => (
+                        <motion.div
+                          key={product.id}
+                          initial={{ opacity: 0, y: 20 }}
+                          animate={{ opacity: 1, y: 0 }}
+                        >
+                          <Card className="overflow-hidden group hover:shadow-lg transition-shadow">
+                            <div className="aspect-square bg-gray-100 relative">
+                              {product.image_url ? (
+                                <img
+                                  src={product.image_url}
+                                  alt={product.product_name}
+                                  className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                                />
+                              ) : (
+                                <div className="w-full h-full flex items-center justify-center">
+                                  <ShoppingBag className="w-8 h-8 text-gray-300" />
+                                </div>
+                              )}
+                              <button
+                               onClick={(e) => handleAddToWishlist(product, e)}
+                               className={`absolute top-2 right-2 p-2 rounded-full ${
+                                 isInWishlist(product.id)
+                                   ? "bg-pink-500 text-white"
+                                   : "bg-white/80 text-gray-600 hover:bg-pink-100"
+                               } transition-colors`}
+                              >
+                               {isInWishlist(product.id) ? (
+                                 <Check className="w-4 h-4" />
+                               ) : (
+                                 <Heart className="w-4 h-4" />
+                               )}
+                              </button>
+                            </div>
+                            <CardContent className="p-3">
+                              <p className="text-sm font-medium line-clamp-2 mb-1">
+                                {product.product_name}
+                              </p>
+                              <div className="flex items-center justify-between">
+                                <span className="text-purple-600 font-semibold">₹{product.price}</span>
+                                <a
+                                  href={product.product_url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-gray-400 hover:text-purple-500"
+                                >
+                                  <ExternalLink className="w-4 h-4" />
+                                </a>
+                              </div>
+                            </CardContent>
+                          </Card>
+                        </motion.div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <div className="text-center">
+                  <Button
+                    onClick={handleGenerateAI}
+                    variant="outline"
+                    disabled={isLoadingAI}
+                  >
+                    <Sparkles className="w-4 h-4 mr-2" />
+                    Refresh Recommendations
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <Card>
+                <CardContent className="p-12 text-center">
+                  <Sparkles className="w-12 h-12 mx-auto mb-4 text-gray-300" />
+                  <h3 className="text-lg font-semibold mb-2">Complete Your Profile</h3>
+                  <p className="text-gray-600 mb-4">
+                    We need to know your style preferences to give personalized recommendations
+                  </p>
+                  <Button
+                    onClick={() => navigate(createPageUrl("StyleProfile"))}
+                    className="bg-gradient-to-r from-purple-500 to-pink-500"
+                  >
+                    Complete Profile
+                  </Button>
+                </CardContent>
+              </Card>
+            )}
+          </TabsContent>
+
+          {/* Wishlist */}
+          <TabsContent value="wishlist">
+            {!user ? (
+              <Card>
+                <CardContent className="p-12 text-center">
+                  <Heart className="w-12 h-12 mx-auto mb-4 text-gray-300" />
+                  <h3 className="text-lg font-semibold mb-2">Save Your Favorites</h3>
+                  <p className="text-gray-600 mb-4">
+                    Sign in to create your wishlist and save products you love
+                  </p>
+                  <Button
+                    onClick={() => requireAuth({
+                      title: "Create Your Wishlist",
+                      message: "Sign in to save your favorite fashion items and access them anytime."
+                    })}
+                    className="bg-gradient-to-r from-purple-500 to-pink-500"
+                  >
+                    Sign In to Save Favorites
+                  </Button>
+                </CardContent>
+              </Card>
+            ) : wishlist.length === 0 ? (
+              <Card>
+                <CardContent className="p-12 text-center">
+                  <Heart className="w-12 h-12 mx-auto mb-4 text-gray-300" />
+                  <h3 className="text-lg font-semibold mb-2">Your Wishlist is Empty</h3>
+                  <p className="text-gray-600 mb-4">
+                    Save items you love to your wishlist for easy access later
+                  </p>
+                  <Button
+                    onClick={() => navigate(createPageUrl("Marketplace"))}
+                    className="bg-gradient-to-r from-purple-500 to-pink-500"
+                  >
+                    Browse Marketplace
+                  </Button>
+                </CardContent>
+              </Card>
+            ) : (
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                {wishlist.map((item) => (
+                  <Card key={item.id} className="overflow-hidden group">
+                    <div className="aspect-square bg-gray-100 relative">
+                      {item.image_url ? (
+                        <img
+                          src={item.image_url}
+                          alt={item.product_name}
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center">
+                          <ShoppingBag className="w-8 h-8 text-gray-300" />
+                        </div>
+                      )}
+                      <button
+                        onClick={() => addToWishlistMutation.mutate({ id: item.product_id })}
+                        className="absolute top-2 right-2 p-2 rounded-full bg-pink-500 text-white"
+                      >
+                        <Heart className="w-4 h-4" fill="currentColor" />
+                      </button>
+                    </div>
+                    <CardContent className="p-3">
+                      <p className="text-sm font-medium line-clamp-2 mb-1">
+                        {item.product_name}
+                      </p>
+                      <div className="flex items-center justify-between">
+                        <span className="text-purple-600 font-semibold">₹{item.price}</span>
+                        <a
+                          href={item.product_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-xs text-purple-500 hover:underline flex items-center gap-1"
+                        >
+                          Shop <ExternalLink className="w-3 h-3" />
+                        </a>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
+          </TabsContent>
+
+          {/* Trending For You */}
+          <TabsContent value="trending">
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+              {affiliateProducts.slice(0, 12).map((product, index) => (
+                <motion.div
+                  key={product.id}
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: index * 0.05 }}
+                >
+                  <Card className="overflow-hidden group hover:shadow-lg transition-shadow">
+                    <div className="aspect-square bg-gray-100 relative">
+                      {product.image_url ? (
+                        <img
+                          src={product.image_url}
+                          alt={product.product_name}
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                        />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center">
+                          <ShoppingBag className="w-8 h-8 text-gray-300" />
+                        </div>
+                      )}
+                      {index < 3 && (
+                        <Badge className="absolute top-2 left-2 bg-gradient-to-r from-orange-400 to-pink-500">
+                          <TrendingUp className="w-3 h-3 mr-1" />
+                          Trending
+                        </Badge>
+                      )}
+                      <button
+                        onClick={(e) => handleAddToWishlist(product, e)}
+                        className={`absolute top-2 right-2 p-2 rounded-full ${
+                          isInWishlist(product.id)
+                            ? "bg-pink-500 text-white"
+                            : "bg-white/80 text-gray-600 hover:bg-pink-100"
+                        } transition-colors`}
+                      >
+                        {isInWishlist(product.id) ? (
+                          <Check className="w-4 h-4" />
+                        ) : (
+                          <Heart className="w-4 h-4" />
+                        )}
+                      </button>
+                    </div>
+                    <CardContent className="p-3">
+                      <p className="text-sm font-medium line-clamp-2 mb-1">
+                        {product.product_name}
+                      </p>
+                      <div className="flex items-center justify-between">
+                        <span className="text-purple-600 font-semibold">₹{product.price}</span>
+                        <a
+                          href={product.product_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-gray-400 hover:text-purple-500"
+                        >
+                          <ExternalLink className="w-4 h-4" />
+                        </a>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </motion.div>
+              ))}
+            </div>
+          </TabsContent>
+        </Tabs>
+
+        <AuthRequiredModal
+          isOpen={showAuthModal}
+          onClose={closeAuthModal}
+          {...authModalConfig}
+        />
+      </div>
+    </div>
+  );
+}

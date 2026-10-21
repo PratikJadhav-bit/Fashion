@@ -1,0 +1,35 @@
+{
+  "name": "StyleDNAHistory",
+  "type": "object",
+  "properties": {
+    "user_email": {
+      "type": "string",
+      "description": "Email of the user"
+    },
+    "quiz_date": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When the quiz was taken"
+    },
+    "results": {
+      "type": "object",
+      "description": "Full quiz results including percentages and top styles"
+    },
+    "primary_style": {
+      "type": "string",
+      "description": "Primary style identified"
+    },
+    "secondary_style": {
+      "type": "string",
+      "description": "Secondary style identified"
+    },
+    "answers": {
+      "type": "object",
+      "description": "User's answers for reference"
+    }
+  },
+  "required": [
+    "user_email",
+    "results"
+  ]
+}

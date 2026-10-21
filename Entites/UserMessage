@@ -1,0 +1,44 @@
+{
+  "name": "UserMessage",
+  "type": "object",
+  "properties": {
+    "sender_email": {
+      "type": "string",
+      "description": "Email of the sender"
+    },
+    "sender_name": {
+      "type": "string",
+      "description": "Name of the sender"
+    },
+    "recipient_email": {
+      "type": "string",
+      "description": "Email of the recipient"
+    },
+    "recipient_name": {
+      "type": "string",
+      "description": "Name of the recipient"
+    },
+    "subject": {
+      "type": "string",
+      "description": "Message subject"
+    },
+    "message_text": {
+      "type": "string",
+      "description": "Message content"
+    },
+    "is_read": {
+      "type": "boolean",
+      "default": false,
+      "description": "Whether message has been read"
+    },
+    "design_reference": {
+      "type": "string",
+      "description": "Optional design ID being discussed"
+    }
+  },
+  "required": [
+    "sender_email",
+    "recipient_email",
+    "message_text"
+  ]
+}

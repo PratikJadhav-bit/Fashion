@@ -1,0 +1,332 @@
+import React from "react";
+import { base44 } from "@/api/base44Client";
+import { createPageUrl } from "@/utils";
+import { useQuery } from "@tanstack/react-query";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { motion } from "framer-motion";
+import {
+  Leaf,
+  TrendingUp,
+  Award,
+  Recycle,
+  ShoppingBag,
+  Shirt,
+  Target,
+  Calendar
+} from "lucide-react";
+import { Skeleton } from "@/components/ui/skeleton";
+
+export default function SustainabilityScore() {
+  const [user, setUser] = React.useState(null);
+
+  React.useEffect(() => {
+    const loadUser = async () => {
+      try {
+        const currentUser = await base44.auth.me();
+        setUser(currentUser);
+      } catch (error) {
+        base44.auth.redirectToLogin(createPageUrl("SustainabilityScore"));
+      }
+    };
+    loadUser();
+  }, []);
+
+  const { data: wardrobeItems = [], isLoading: wardrobeLoading } = useQuery({
+    queryKey: ['wardrobe', user?.email],
+    queryFn: () => base44.entities.WardrobeItem.filter({ user_email: user.email }),
+    enabled: !!user?.email,
+    initialData: [],
+  });
+
+  const { data: outfitHistory = [], isLoading: historyLoading } = useQuery({
+    queryKey: ['outfitHistory', user?.email],
+    queryFn: () => base44.entities.OutfitHistory.filter({ user_email: user.email }, '-occasion_date'),
+    enabled: !!user?.email,
+    initialData: [],
+  });
+
+  // Calculate sustainability metrics
+  const totalSpent = outfitHistory.reduce((sum, outfit) => sum + (outfit.total_spent || 0), 0);
+  const avgWearPerItem = wardrobeItems.length > 0
+    ? wardrobeItems.reduce((sum, item) => sum + (item.times_worn || 0), 0) / wardrobeItems.length
+    : 0;
+  
+  const recentPurchases = outfitHistory.filter(outfit => 
+    outfit.total_spent > 0 && 
+    new Date(outfit.occasion_date) > new Date(Date.now() - 90 * 24 * 60 * 60 * 1000)
+  ).length;
+
+  const oldItems = wardrobeItems.filter(item => 
+    item.purchase_date && 
+    new Date(item.purchase_date) < new Date(Date.now() - 365 * 24 * 60 * 60 * 1000)
+  ).length;
+
+  // Calculate score (0-100)
+  let sustainabilityScore = 50; // Base score
+  
+  // Bonus for wearing items multiple times
+  if (avgWearPerItem > 5) sustainabilityScore += 20;
+  else if (avgWearPerItem > 3) sustainabilityScore += 10;
+  
+  // Bonus for keeping items long-term
+  if (oldItems > wardrobeItems.length * 0.3) sustainabilityScore += 15;
+  
+  // Penalty for frequent purchases
+  if (recentPurchases > 10) sustainabilityScore -= 20;
+  else if (recentPurchases > 5) sustainabilityScore -= 10;
+  
+  // Bonus for having a reasonable wardrobe size
+  if (wardrobeItems.length > 20 && wardrobeItems.length < 100) sustainabilityScore += 15;
+
+  sustainabilityScore = Math.max(0, Math.min(100, sustainabilityScore));
+
+  const getScoreLevel = (score) => {
+    if (score >= 80) return { level: "Eco Champion", color: "from-green-500 to-emerald-500", icon: Award };
+    if (score >= 60) return { level: "Sustainable Stylist", color: "from-blue-500 to-cyan-500", icon: Leaf };
+    if (score >= 40) return { level: "Growing Green", color: "from-yellow-500 to-orange-500", icon: TrendingUp };
+    return { level: "Getting Started", color: "from-gray-500 to-gray-600", icon: Target };
+  };
+
+  const scoreInfo = getScoreLevel(sustainabilityScore);
+
+  const tips = [
+    {
+      icon: Recycle,
+      title: "Rewear More Often",
+      description: `Aim to wear each item at least 5 times. Current average: ${avgWearPerItem.toFixed(1)} times`,
+      achieved: avgWearPerItem >= 5
+    },
+    {
+      icon: ShoppingBag,
+      title: "Mindful Shopping",
+      description: `Try to limit new purchases to 1-2 items per month. Recent: ${recentPurchases} in 3 months`,
+      achieved: recentPurchases <= 6
+    },
+    {
+      icon: Shirt,
+      title: "Quality Over Quantity",
+      description: "Keep items for at least 1 year to reduce fashion waste",
+      achieved: oldItems > wardrobeItems.length * 0.2
+    },
+    {
+      icon: Calendar,
+      title: "Track Your Outfits",
+      description: "Log what you wear to maximize your wardrobe potential",
+      achieved: outfitHistory.length > 10
+    }
+  ];
+
+  const achievements = [
+    {
+      title: "First Steps",
+      description: "Created your first wardrobe",
+      unlocked: wardrobeItems.length > 0,
+      icon: "🌱"
+    },
+    {
+      title: "Wardrobe Guru",
+      description: "Added 20+ items to wardrobe",
+      unlocked: wardrobeItems.length >= 20,
+      icon: "👔"
+    },
+    {
+      title: "Repeat Champion",
+      description: "Wore an item 10+ times",
+      unlocked: wardrobeItems.some(item => (item.times_worn || 0) >= 10),
+      icon: "♻️"
+    },
+    {
+      title: "Fashion Tracker",
+      description: "Logged 20+ outfit histories",
+      unlocked: outfitHistory.length >= 20,
+      icon: "📅"
+    },
+    {
+      title: "Sustainable Star",
+      description: "Reached 80+ sustainability score",
+      unlocked: sustainabilityScore >= 80,
+      icon: "⭐"
+    },
+    {
+      title: "Budget Master",
+      description: "Spent less than $50/month on average",
+      unlocked: outfitHistory.length > 0 && (totalSpent / Math.max(1, outfitHistory.length)) < 50,
+      icon: "💰"
+    }
+  ];
+
+  if (!user) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-pink-500" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="p-4 md:p-8 max-w-6xl mx-auto">
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="mb-8"
+      >
+        <div className="flex items-center gap-3 mb-2">
+          <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-green-400 to-emerald-400 flex items-center justify-center">
+            <Leaf className="w-6 h-6 text-white" />
+          </div>
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900">Sustainability Score</h1>
+            <p className="text-gray-600">Track your fashion footprint</p>
+          </div>
+        </div>
+      </motion.div>
+
+      {/* Score Display */}
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.1 }}
+      >
+        <Card className="mb-8 overflow-hidden">
+          <div className={`bg-gradient-to-r ${scoreInfo.color} p-8 text-white`}>
+            <div className="flex flex-col md:flex-row items-center gap-6">
+              <div className="w-32 h-32 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center">
+                <div className="text-center">
+                  <div className="text-5xl font-bold">{Math.round(sustainabilityScore)}</div>
+                  <div className="text-sm opacity-90">/ 100</div>
+                </div>
+              </div>
+              <div className="flex-1 text-center md:text-left">
+                <div className="flex items-center gap-2 justify-center md:justify-start mb-2">
+                  <scoreInfo.icon className="w-8 h-8" />
+                  <h2 className="text-3xl font-bold">{scoreInfo.level}</h2>
+                </div>
+                <p className="text-lg opacity-90">
+                  {sustainabilityScore >= 80 && "Amazing! You're a role model for sustainable fashion!"}
+                  {sustainabilityScore >= 60 && sustainabilityScore < 80 && "Great work! You're making mindful fashion choices."}
+                  {sustainabilityScore >= 40 && sustainabilityScore < 60 && "Good start! Keep working towards more sustainable habits."}
+                  {sustainabilityScore < 40 && "Every journey starts with a single step. Let's improve together!"}
+                </p>
+              </div>
+            </div>
+          </div>
+        </Card>
+      </motion.div>
+
+      {/* Stats Grid */}
+      <div className="grid md:grid-cols-4 gap-6 mb-8">
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.2 }}
+        >
+          <Card>
+            <CardContent className="p-6 text-center">
+              <Shirt className="w-8 h-8 mx-auto mb-2 text-purple-500" />
+              <p className="text-3xl font-bold text-gray-900">{wardrobeItems.length}</p>
+              <p className="text-sm text-gray-500">Wardrobe Items</p>
+            </CardContent>
+          </Card>
+        </motion.div>
+
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.3 }}
+        >
+          <Card>
+            <CardContent className="p-6 text-center">
+              <Recycle className="w-8 h-8 mx-auto mb-2 text-green-500" />
+              <p className="text-3xl font-bold text-gray-900">{avgWearPerItem.toFixed(1)}</p>
+              <p className="text-sm text-gray-500">Avg Wears/Item</p>
+            </CardContent>
+          </Card>
+        </motion.div>
+
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.4 }}
+        >
+          <Card>
+            <CardContent className="p-6 text-center">
+              <ShoppingBag className="w-8 h-8 mx-auto mb-2 text-blue-500" />
+              <p className="text-3xl font-bold text-gray-900">{recentPurchases}</p>
+              <p className="text-sm text-gray-500">Purchases (3mo)</p>
+            </CardContent>
+          </Card>
+        </motion.div>
+
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.5 }}
+        >
+          <Card>
+            <CardContent className="p-6 text-center">
+              <Calendar className="w-8 h-8 mx-auto mb-2 text-orange-500" />
+              <p className="text-3xl font-bold text-gray-900">{oldItems}</p>
+              <p className="text-sm text-gray-500">Items 1+ Year Old</p>
+            </CardContent>
+          </Card>
+        </motion.div>
+      </div>
+
+      {/* Tips */}
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.6 }}
+        className="mb-8"
+      >
+        <h2 className="text-2xl font-bold text-gray-900 mb-4">Sustainability Tips</h2>
+        <div className="grid md:grid-cols-2 gap-4">
+          {tips.map((tip, index) => (
+            <Card key={index} className={tip.achieved ? "border-green-200 bg-green-50" : ""}>
+              <CardContent className="p-4">
+                <div className="flex items-start gap-3">
+                  <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
+                    tip.achieved ? "bg-green-500" : "bg-gray-200"
+                  }`}>
+                    <tip.icon className={`w-5 h-5 ${tip.achieved ? "text-white" : "text-gray-500"}`} />
+                  </div>
+                  <div className="flex-1">
+                    <h3 className="font-semibold text-gray-900 mb-1">{tip.title}</h3>
+                    <p className="text-sm text-gray-600">{tip.description}</p>
+                  </div>
+                  {tip.achieved && (
+                    <Badge className="bg-green-500">✓</Badge>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      </motion.div>
+
+      {/* Achievements */}
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.7 }}
+      >
+        <h2 className="text-2xl font-bold text-gray-900 mb-4">Achievements</h2>
+        <div className="grid md:grid-cols-3 gap-4">
+          {achievements.map((achievement, index) => (
+            <Card key={index} className={achievement.unlocked ? "border-purple-200 bg-purple-50" : "opacity-50"}>
+              <CardContent className="p-4 text-center">
+                <div className="text-4xl mb-2">{achievement.icon}</div>
+                <h3 className="font-semibold text-gray-900 mb-1">{achievement.title}</h3>
+                <p className="text-xs text-gray-600">{achievement.description}</p>
+                {achievement.unlocked && (
+                  <Badge className="mt-2 bg-purple-500">Unlocked!</Badge>
+                )}
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      </motion.div>
+    </div>
+  );
+}

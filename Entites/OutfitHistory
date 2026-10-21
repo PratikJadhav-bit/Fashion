@@ -1,0 +1,96 @@
+{
+  "name": "OutfitHistory",
+  "type": "object",
+  "properties": {
+    "user_email": {
+      "type": "string",
+      "description": "Email of the user"
+    },
+    "occasion_type": {
+      "type": "string",
+      "enum": [
+        "wedding",
+        "job_interview",
+        "date",
+        "party",
+        "casual_hangout",
+        "business_meeting",
+        "dinner",
+        "brunch",
+        "concert",
+        "beach",
+        "gym",
+        "formal_event",
+        "other"
+      ],
+      "description": "Type of occasion"
+    },
+    "occasion_name": {
+      "type": "string",
+      "description": "Specific name of the occasion"
+    },
+    "occasion_date": {
+      "type": "string",
+      "format": "date",
+      "description": "Date of the occasion"
+    },
+    "outfit_description": {
+      "type": "string",
+      "description": "Description of what was worn"
+    },
+    "wardrobe_items_used": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "IDs of wardrobe items worn"
+    },
+    "outfit_photo_url": {
+      "type": "string",
+      "description": "Photo of the complete outfit"
+    },
+    "new_items_purchased": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "item_name": {
+            "type": "string"
+          },
+          "purchase_link": {
+            "type": "string"
+          },
+          "price": {
+            "type": "number"
+          }
+        }
+      },
+      "description": "New items that were purchased for this occasion"
+    },
+    "total_spent": {
+      "type": "number",
+      "default": 0,
+      "description": "Total money spent on new items"
+    },
+    "rating": {
+      "type": "number",
+      "minimum": 1,
+      "maximum": 5,
+      "description": "How much user liked this outfit (1-5 stars)"
+    },
+    "notes": {
+      "type": "string",
+      "description": "Personal notes about the outfit"
+    },
+    "is_favorite": {
+      "type": "boolean",
+      "default": false,
+      "description": "Whether this outfit is marked as favorite"
+    }
+  },
+  "required": [
+    "user_email",
+    "occasion_type",
+    "occasion_date"
+  ]
+}

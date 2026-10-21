@@ -1,0 +1,112 @@
+import React from "react";
+import { Badge } from "@/components/ui/badge";
+import { Sparkles, CheckCircle, AlertCircle } from "lucide-react";
+import { motion } from "framer-motion";
+
+const styleDescriptions = {
+  minimalist: { name: "Minimalist", keywords: ["clean", "simple", "neutral", "basic", "minimal"] },
+  boho: { name: "Bohemian", keywords: ["boho", "bohemian", "flowy", "earthy", "layered", "vintage"] },
+  glam: { name: "Glamorous", keywords: ["glam", "bold", "statement", "sparkle", "luxury", "elegant"] },
+  classic: { name: "Classic", keywords: ["classic", "timeless", "traditional", "polished", "preppy"] },
+  edgy: { name: "Edgy", keywords: ["edgy", "punk", "dark", "leather", "black", "grunge"] },
+  creative: { name: "Creative", keywords: ["creative", "artistic", "unique", "colorful", "eclectic"] },
+  romantic: { name: "Romantic", keywords: ["romantic", "feminine", "soft", "floral", "delicate", "lace"] },
+  casual: { name: "Casual", keywords: ["casual", "relaxed", "comfortable", "everyday", "sporty"] }
+};
+
+export default function StyleDNAMatchScore({ product, userProfile }) {
+  if (!userProfile?.style_dna) {
+    return null;
+  }
+
+  const calculateMatchScore = () => {
+    const styleDNA = userProfile.style_dna;
+    const productText = `${product.product_name || ''} ${product.description || ''} ${(product.style_tags || []).join(' ')}`.toLowerCase();
+    
+    let totalScore = 0;
+    let matchedStyles = [];
+
+    // Check each style in user's DNA
+    styleDNA.topStyles?.forEach(([style, percentage], index) => {
+      const styleInfo = styleDescriptions[style];
+      if (!styleInfo) return;
+
+      const keywordMatches = styleInfo.keywords.filter(keyword => 
+        productText.includes(keyword)
+      ).length;
+
+      if (keywordMatches > 0) {
+        // Weight by DNA percentage and position
+        const weight = (percentage / 100) * (1 - index * 0.15);
+        totalScore += keywordMatches * weight * 20;
+        matchedStyles.push({ style: styleInfo.name, matches: keywordMatches });
+      }
+    });
+
+    // Check color matches
+    if (userProfile.favorite_colors && product.color) {
+      const colorMatch = userProfile.favorite_colors.some(c => 
+        product.color?.toLowerCase().includes(c.toLowerCase()) ||
+        c.toLowerCase().includes(product.color?.toLowerCase())
+      );
+      if (colorMatch) totalScore += 15;
+    }
+
+    // Check style tags match
+    if (product.style_tags && userProfile.style_preferences) {
+      const tagMatches = product.style_tags.filter(tag =>
+        userProfile.style_preferences.some(pref =>
+          tag.toLowerCase().includes(pref.toLowerCase()) ||
+          pref.toLowerCase().includes(tag.toLowerCase())
+        )
+      ).length;
+      totalScore += tagMatches * 10;
+    }
+
+    return {
+      score: Math.min(100, Math.round(totalScore)),
+      matchedStyles: matchedStyles.slice(0, 2)
+    };
+  };
+
+  const { score, matchedStyles } = calculateMatchScore();
+
+  if (score < 20) return null;
+
+  const getScoreColor = () => {
+    if (score >= 80) return "from-green-400 to-emerald-500";
+    if (score >= 60) return "from-blue-400 to-purple-500";
+    if (score >= 40) return "from-yellow-400 to-orange-500";
+    return "from-gray-400 to-gray-500";
+  };
+
+  const getScoreLabel = () => {
+    if (score >= 80) return "Perfect Match";
+    if (score >= 60) return "Great Match";
+    if (score >= 40) return "Good Match";
+    return "Might Like";
+  };
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, scale: 0.9 }}
+      animate={{ opacity: 1, scale: 1 }}
+      className="mt-2"
+    >
+      <div className={`flex items-center gap-2 px-3 py-2 rounded-lg bg-gradient-to-r ${getScoreColor()} text-white text-sm`}>
+        <Sparkles className="w-4 h-4" />
+        <span className="font-medium">{score}% Style DNA Match</span>
+        {score >= 60 && <CheckCircle className="w-4 h-4" />}
+      </div>
+      {matchedStyles.length > 0 && (
+        <div className="flex flex-wrap gap-1 mt-1">
+          {matchedStyles.map((s, i) => (
+            <Badge key={i} variant="outline" className="text-xs">
+              {s.style}
+            </Badge>
+          ))}
+        </div>
+      )}
+    </motion.div>
+  );
+}

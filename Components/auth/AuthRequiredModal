@@ -1,0 +1,138 @@
+import React from "react";
+import { base44 } from "@/api/base44Client";
+import { createPageUrl } from "@/utils";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { Sparkles, User, Lock } from "lucide-react";
+
+export default function AuthRequiredModal({ 
+  isOpen, 
+  onClose, 
+  title = "Sign in to continue",
+  message = "Create an account to save your style and access all features.",
+  redirectUrl,
+  onSuccess
+}) {
+  const handleSignIn = () => {
+    // Store pending action in sessionStorage
+    if (onSuccess) {
+      sessionStorage.setItem('pendingAuthAction', JSON.stringify({
+        type: 'callback',
+        url: window.location.href
+      }));
+    }
+    base44.auth.redirectToLogin(redirectUrl || window.location.pathname);
+  };
+
+  return (
+    <Dialog open={isOpen} onOpenChange={onClose}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader className="text-center">
+          <div className="w-16 h-16 rounded-full bg-gradient-to-br from-pink-100 to-purple-100 flex items-center justify-center mx-auto mb-4">
+            <Lock className="w-8 h-8 text-purple-500" />
+          </div>
+          <DialogTitle className="text-xl">{title}</DialogTitle>
+          <DialogDescription className="text-center">
+            {message}
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-3 py-4">
+          <div className="flex items-center gap-3 text-sm text-gray-600">
+            <div className="w-8 h-8 rounded-full bg-purple-100 flex items-center justify-center">
+              <Sparkles className="w-4 h-4 text-purple-600" />
+            </div>
+            <span>Get AI-powered personalized outfit suggestions</span>
+          </div>
+          <div className="flex items-center gap-3 text-sm text-gray-600">
+            <div className="w-8 h-8 rounded-full bg-pink-100 flex items-center justify-center">
+              <User className="w-4 h-4 text-pink-600" />
+            </div>
+            <span>Save your wardrobe and style preferences</span>
+          </div>
+          <div className="flex items-center gap-3 text-sm text-gray-600">
+            <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center">
+              <Lock className="w-4 h-4 text-blue-600" />
+            </div>
+            <span>Try on clothes virtually with AR</span>
+          </div>
+        </div>
+        
+        <div className="bg-gradient-to-r from-purple-50 to-pink-50 rounded-lg p-3 text-center">
+          <p className="text-xs text-gray-600">
+            🎉 <strong>Free forever</strong> • No credit card required • Quick OTP login
+          </p>
+        </div>
+
+        <DialogFooter className="flex flex-col gap-2 sm:flex-col">
+          <Button
+            onClick={handleSignIn}
+            className="w-full bg-gradient-to-r from-pink-500 to-purple-500 hover:from-pink-600 hover:to-purple-600"
+          >
+            Sign Up / Log In
+          </Button>
+          <Button
+            variant="ghost"
+            onClick={onClose}
+            className="w-full"
+          >
+            Cancel
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// Hook to manage auth modal state
+export function useAuthRequired() {
+  const [showAuthModal, setShowAuthModal] = React.useState(false);
+  const [authModalConfig, setAuthModalConfig] = React.useState({});
+  const [user, setUser] = React.useState(null);
+  const [isLoading, setIsLoading] = React.useState(true);
+
+  React.useEffect(() => {
+    const loadUser = async () => {
+      try {
+        const currentUser = await base44.auth.me();
+        setUser(currentUser);
+      } catch (error) {
+        // Guest mode
+      }
+      setIsLoading(false);
+    };
+    loadUser();
+  }, []);
+
+  const requireAuth = (config = {}) => {
+    if (user) {
+      return true;
+    }
+    setAuthModalConfig(config);
+    setShowAuthModal(true);
+    return false;
+  };
+
+  const closeAuthModal = () => {
+    setShowAuthModal(false);
+    setAuthModalConfig({});
+  };
+
+  return {
+    user,
+    isLoading,
+    isAuthenticated: !!user,
+    showAuthModal,
+    authModalConfig,
+    requireAuth,
+    closeAuthModal,
+    setShowAuthModal
+  };
+}

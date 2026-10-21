@@ -1,0 +1,34 @@
+{
+  "name": "DesignCollection",
+  "type": "object",
+  "properties": {
+    "user_email": {
+      "type": "string",
+      "description": "Email of the user who owns the collection"
+    },
+    "collection_name": {
+      "type": "string",
+      "description": "Name of the collection"
+    },
+    "description": {
+      "type": "string",
+      "description": "Description of the collection"
+    },
+    "design_ids": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Array of design IDs in this collection"
+    },
+    "is_public": {
+      "type": "boolean",
+      "default": false,
+      "description": "Whether the collection is publicly visible"
+    }
+  },
+  "required": [
+    "user_email",
+    "collection_name"
+  ]
+}

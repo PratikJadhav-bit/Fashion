@@ -1,0 +1,396 @@
+import React from "react";
+import { base44 } from "@/api/base44Client";
+import { createPageUrl } from "@/utils";
+import { useNavigate } from "react-router-dom";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { motion, AnimatePresence } from "framer-motion";
+import {
+  Sparkles,
+  Shirt,
+  ArrowRight,
+  Palette,
+  Layers,
+  Save,
+  Wand2,
+  Loader2,
+  BookOpen
+} from "lucide-react";
+
+export default function CustomDesigner() {
+  const navigate = useNavigate();
+  const [user, setUser] = React.useState(null);
+  const [step, setStep] = React.useState(1);
+  const [showAIPrompt, setShowAIPrompt] = React.useState(false);
+  const [aiPrompt, setAiPrompt] = React.useState("");
+  const [isGenerating, setIsGenerating] = React.useState(false);
+
+  React.useEffect(() => {
+    const loadUser = async () => {
+      try {
+        const currentUser = await base44.auth.me();
+        setUser(currentUser);
+      } catch (error) {
+        base44.auth.redirectToLogin(createPageUrl("CustomDesigner"));
+      }
+    };
+    loadUser();
+  }, []);
+
+  const garmentTypes = [
+    {
+      category: "Tops",
+      items: [
+        { id: "tshirt_crewneck", name: "T-Shirt (Crewneck)", icon: "👕", image: "https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?w=400" },
+        { id: "tshirt_vneck", name: "T-Shirt (V-Neck)", icon: "👕", image: "https://images.unsplash.com/photo-1583743814966-8936f5b7be1a?w=400" },
+        { id: "hoodie_pullover", name: "Hoodie (Pullover)", icon: "🧥", image: "https://images.unsplash.com/photo-1556821840-3a63f95609a7?w=400" },
+        { id: "hoodie_zipup", name: "Hoodie (Zip-up)", icon: "🧥", image: "https://images.unsplash.com/photo-1556821840-3a63f95609a7?w=400" },
+        { id: "sweatshirt", name: "Sweatshirt", icon: "👔", image: "https://images.unsplash.com/photo-1578587018452-892bacefd3f2?w=400" },
+        { id: "tank_top", name: "Tank Top", icon: "👚", image: "https://images.unsplash.com/photo-1622445275463-afa2ab738c34?w=400" }
+      ]
+    },
+    {
+      category: "Bottoms",
+      items: [
+        { id: "pants_joggers", name: "Joggers", icon: "👖", image: "https://images.unsplash.com/photo-1624378439575-d8705ad7ae80?w=400" },
+        { id: "pants_denim", name: "Denim", icon: "👖", image: "https://images.unsplash.com/photo-1542272604-787c3835535d?w=400" },
+        { id: "pants_chinos", name: "Chinos", icon: "👖", image: "https://images.unsplash.com/photo-1473966968600-fa801b869a1a?w=400" },
+        { id: "shorts", name: "Shorts", icon: "🩳", image: "https://images.unsplash.com/photo-1591195853828-11db59a44f6b?w=400" }
+      ]
+    },
+    {
+      category: "Outerwear",
+      items: [
+        { id: "jacket_bomber", name: "Bomber Jacket", icon: "🧥", image: "https://images.unsplash.com/photo-1551028719-00167b16eac5?w=400" },
+        { id: "jacket_denim", name: "Denim Jacket", icon: "🧥", image: "https://images.unsplash.com/photo-1576995853123-5a10305d93c0?w=400" }
+      ]
+    }
+  ];
+
+  const handleSelectGarment = (garmentId) => {
+    const initialDesign = {
+      garment_type: garmentId,
+      fit_shape: "regular_fit",
+      size: "M",
+      material: "cotton_ringspun",
+      base_color: "#FFFFFF",
+      graphics: [],
+      estimated_price: 29.99,
+      status: "draft"
+    };
+    
+    // Store in session and navigate to editor
+    sessionStorage.setItem("currentDesign", JSON.stringify(initialDesign));
+    navigate(createPageUrl("DesignEditor"));
+  };
+
+  const generateAIDesign = async () => {
+    if (!aiPrompt.trim()) return;
+
+    setIsGenerating(true);
+    try {
+      const prompt = `Based on this design request: "${aiPrompt}"
+      
+Suggest the perfect garment setup with these details:
+1. Best garment type (from: tshirt_crewneck, tshirt_vneck, hoodie_pullover, hoodie_zipup, sweatshirt, tank_top, pants_joggers, pants_denim, pants_chinos, shorts, jacket_bomber, jacket_denim)
+2. Recommended material (from: cotton_ringspun, cotton_jersey, cotton_pima, polyester_blend_50_50, tri_blend, fleece) and why
+3. Perfect base color (provide hex code)
+4. Design elements to add (text, graphics, patterns)
+5. Overall style direction
+
+Format as JSON:
+{
+  "garment_type": "...",
+  "material": "...",
+  "base_color": "#...",
+  "reasoning": "..."
+}`;
+
+      const result = await base44.integrations.Core.InvokeLLM({
+        prompt: prompt,
+        add_context_from_internet: true,
+        response_json_schema: {
+          type: "object",
+          properties: {
+            garment_type: { type: "string" },
+            material: { type: "string" },
+            base_color: { type: "string" },
+            reasoning: { type: "string" }
+          }
+        }
+      });
+
+      // Create design with AI suggestions
+      const aiDesign = {
+        garment_type: result.garment_type || "tshirt_crewneck",
+        fit_shape: "regular_fit",
+        size: "M",
+        material: result.material || "cotton_ringspun",
+        base_color: result.base_color || "#FFFFFF",
+        graphics: [],
+        estimated_price: 29.99,
+        status: "draft",
+        ai_generated: true,
+        ai_reasoning: result.reasoning
+      };
+
+      sessionStorage.setItem("currentDesign", JSON.stringify(aiDesign));
+      navigate(createPageUrl("DesignEditor"));
+    } catch (error) {
+      console.error("Error generating AI design:", error);
+      alert("Failed to generate AI design. Please try again.");
+    }
+    setIsGenerating(false);
+  };
+
+  if (!user) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-pink-500" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-purple-50 to-pink-50 p-4 md:p-8">
+      <div className="max-w-7xl mx-auto">
+        {/* Hero Section */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="text-center mb-12"
+        >
+          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/80 backdrop-blur-sm border border-purple-200 mb-6">
+            <Sparkles className="w-4 h-4 text-purple-500" />
+            <span className="text-sm font-medium text-gray-700">3D Custom Design Studio</span>
+          </div>
+          
+          <h1 className="text-4xl md:text-6xl font-bold mb-4">
+            <span className="bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 bg-clip-text text-transparent">
+              Design Your Dream
+            </span>
+            <br />
+            <span className="text-gray-800">Fashion Piece</span>
+          </h1>
+          
+          <p className="text-xl text-gray-600 max-w-2xl mx-auto mb-8">
+            Create unique, personalized clothing with our advanced 3D designer. 
+            Choose your garment, customize every detail, and bring your vision to life.
+          </p>
+
+          <div className="flex flex-wrap justify-center gap-6 text-sm text-gray-600">
+            <div className="flex items-center gap-2">
+              <div className="w-10 h-10 rounded-full bg-purple-100 flex items-center justify-center">
+                <Shirt className="w-5 h-5 text-purple-600" />
+              </div>
+              <span>Choose Garment</span>
+            </div>
+            <ArrowRight className="w-5 h-5 mt-2 text-gray-400" />
+            <div className="flex items-center gap-2">
+              <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center">
+                <Palette className="w-5 h-5 text-blue-600" />
+              </div>
+              <span>Customize Design</span>
+            </div>
+            <ArrowRight className="w-5 h-5 mt-2 text-gray-400" />
+            <div className="flex items-center gap-2">
+              <div className="w-10 h-10 rounded-full bg-pink-100 flex items-center justify-center">
+                <Layers className="w-5 h-5 text-pink-600" />
+              </div>
+              <span>Preview in 3D</span>
+            </div>
+            <ArrowRight className="w-5 h-5 mt-2 text-gray-400" />
+            <div className="flex items-center gap-2">
+              <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center">
+                <Save className="w-5 h-5 text-green-600" />
+              </div>
+              <span>Save & Order</span>
+            </div>
+          </div>
+
+          {/* AI Design Generator */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-4xl mx-auto">
+            <Card className="bg-gradient-to-r from-purple-50 to-pink-50 border-purple-200">
+              <CardContent className="p-6">
+                <div className="flex items-start gap-4">
+                  <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-purple-400 to-pink-400 flex items-center justify-center flex-shrink-0">
+                    <Wand2 className="w-6 h-6 text-white" />
+                  </div>
+                  <div className="flex-1">
+                    <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                      AI Design Generator
+                    </h3>
+                    <p className="text-sm text-gray-600 mb-4">
+                      Describe your vision and let AI create the perfect design
+                    </p>
+                    {!showAIPrompt ? (
+                      <Button
+                        onClick={() => setShowAIPrompt(true)}
+                        className="bg-gradient-to-r from-purple-500 to-pink-500"
+                      >
+                        <Wand2 className="w-4 h-4 mr-2" />
+                        Generate with AI
+                      </Button>
+                    ) : (
+                      <div className="space-y-3">
+                        <textarea
+                          value={aiPrompt}
+                          onChange={(e) => setAiPrompt(e.target.value)}
+                          placeholder="E.g., A vintage-inspired oversized hoodie with earth tones and nature graphics..."
+                          className="w-full p-3 border rounded-lg text-sm"
+                          rows={3}
+                        />
+                        <div className="flex gap-2">
+                          <Button
+                            onClick={generateAIDesign}
+                            disabled={isGenerating || !aiPrompt.trim()}
+                            className="bg-gradient-to-r from-purple-500 to-pink-500"
+                          >
+                            {isGenerating ? (
+                              <>
+                                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                Generating...
+                              </>
+                            ) : (
+                              <>
+                                <Sparkles className="w-4 h-4 mr-2" />
+                                Generate
+                              </>
+                            )}
+                          </Button>
+                          <Button variant="outline" onClick={() => setShowAIPrompt(false)}>
+                            Cancel
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="bg-gradient-to-r from-orange-50 to-pink-50 border-orange-200">
+              <CardContent className="p-6">
+                <div className="flex items-start gap-4">
+                  <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-orange-400 to-pink-400 flex items-center justify-center flex-shrink-0">
+                    <BookOpen className="w-6 h-6 text-white" />
+                  </div>
+                  <div className="flex-1">
+                    <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                      Need Help?
+                    </h3>
+                    <p className="text-sm text-gray-600 mb-4">
+                      Watch video tutorials to master the design tools
+                    </p>
+                    <Button
+                      onClick={() => navigate(createPageUrl("Tutorials"))}
+                      variant="outline"
+                    >
+                      <BookOpen className="w-4 h-4 mr-2" />
+                      View Tutorials
+                    </Button>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        </motion.div>
+
+        {/* Garment Selection */}
+        <div className="space-y-12">
+          {garmentTypes.map((category, categoryIndex) => (
+            <motion.div
+              key={category.category}
+              initial={{ opacity: 0, y: 30 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: categoryIndex * 0.1 }}
+            >
+              <h2 className="text-2xl font-bold text-gray-900 mb-6 flex items-center gap-3">
+                <div className="w-1 h-8 bg-gradient-to-b from-purple-500 to-pink-500 rounded-full" />
+                {category.category}
+              </h2>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {category.items.map((item, itemIndex) => (
+                  <motion.div
+                    key={item.id}
+                    initial={{ opacity: 0, scale: 0.9 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    transition={{ delay: categoryIndex * 0.1 + itemIndex * 0.05 }}
+                    whileHover={{ scale: 1.02 }}
+                    className="cursor-pointer"
+                    onClick={() => handleSelectGarment(item.id)}
+                  >
+                    <Card className="overflow-hidden group hover:shadow-2xl transition-all duration-300 border-2 border-transparent hover:border-purple-300">
+                      <div className="relative h-64 overflow-hidden bg-gradient-to-br from-gray-100 to-gray-200">
+                        <img
+                          src={item.image}
+                          alt={item.name}
+                          className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
+                        />
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+                        <div className="absolute bottom-4 left-4 right-4 text-white opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                          <p className="text-sm font-medium">Click to customize</p>
+                        </div>
+                      </div>
+                      
+                      <div className="p-6 bg-white">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <div className="flex items-center gap-2 mb-2">
+                              <span className="text-3xl">{item.icon}</span>
+                              <h3 className="text-lg font-semibold text-gray-900">
+                                {item.name}
+                              </h3>
+                            </div>
+                            <p className="text-sm text-gray-500">Starting at $29.99</p>
+                          </div>
+                          <Button
+                            className="bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600"
+                            size="sm"
+                          >
+                            Design
+                            <ArrowRight className="w-4 h-4 ml-1" />
+                          </Button>
+                        </div>
+                      </div>
+                    </Card>
+                  </motion.div>
+                ))}
+              </div>
+            </motion.div>
+          ))}
+        </div>
+
+        {/* CTA Section */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.5 }}
+          className="mt-16 bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 rounded-3xl p-12 text-center text-white"
+        >
+          <h2 className="text-3xl font-bold mb-4">Ready to Create Something Unique?</h2>
+          <p className="text-lg opacity-90 mb-6 max-w-2xl mx-auto">
+            Join thousands of designers creating custom fashion pieces. 
+            No minimum order. Fast shipping. Premium quality.
+          </p>
+          <div className="flex flex-wrap justify-center gap-4 text-sm">
+            <div className="flex items-center gap-2 bg-white/20 rounded-full px-4 py-2">
+              ✓ Free Design Tools
+            </div>
+            <div className="flex items-center gap-2 bg-white/20 rounded-full px-4 py-2">
+              ✓ 3D Preview
+            </div>
+            <div className="flex items-center gap-2 bg-white/20 rounded-full px-4 py-2">
+              ✓ Premium Materials
+            </div>
+            <div className="flex items-center gap-2 bg-white/20 rounded-full px-4 py-2">
+              ✓ Fast Delivery
+            </div>
+          </div>
+        </motion.div>
+      </div>
+    </div>
+  );
+}

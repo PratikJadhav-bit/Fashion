@@ -1,0 +1,289 @@
+import React from "react";
+import { base44 } from "@/api/base44Client";
+import { createPageUrl } from "@/utils";
+import { useNavigate } from "react-router-dom";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { motion } from "framer-motion";
+import {
+  TrendingUp,
+  Sparkles,
+  Loader2,
+  Palette,
+  Shirt,
+  Calendar,
+  BarChart3,
+  RefreshCw
+} from "lucide-react";
+
+export default function FashionTrends() {
+  const navigate = useNavigate();
+  const [user, setUser] = React.useState(null);
+  const [trends, setTrends] = React.useState(null);
+  const [isLoading, setIsLoading] = React.useState(false);
+
+  React.useEffect(() => {
+    const loadUser = async () => {
+      try {
+        const currentUser = await base44.auth.me();
+        setUser(currentUser);
+      } catch (error) {
+        // User not logged in
+      }
+    };
+    loadUser();
+    analyzeTrends();
+  }, []);
+
+  const analyzeTrends = async () => {
+    setIsLoading(true);
+    try {
+      const prompt = `Analyze current fashion trends for ${new Date().getFullYear()}. Provide detailed insights on:
+
+1. **Top Colors**: 5-6 trending colors with hex codes and descriptions
+2. **Popular Styles**: Current trending fashion styles and aesthetics
+3. **Material Preferences**: Which fabrics and materials are in demand
+4. **Garment Types**: Most popular clothing items this season
+5. **Design Elements**: Trending patterns, graphics, and design motifs
+6. **Seasonal Forecast**: What's expected to trend in the next 3 months
+
+Format as JSON with clear sections.`;
+
+      const result = await base44.integrations.Core.InvokeLLM({
+        prompt: prompt,
+        add_context_from_internet: true,
+        response_json_schema: {
+          type: "object",
+          properties: {
+            top_colors: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  name: { type: "string" },
+                  hex: { type: "string" },
+                  description: { type: "string" }
+                }
+              }
+            },
+            popular_styles: {
+              type: "array",
+              items: { type: "string" }
+            },
+            materials: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  name: { type: "string" },
+                  reason: { type: "string" }
+                }
+              }
+            },
+            garment_types: {
+              type: "array",
+              items: { type: "string" }
+            },
+            design_elements: {
+              type: "array",
+              items: { type: "string" }
+            },
+            forecast: { type: "string" }
+          }
+        }
+      });
+
+      setTrends(result);
+    } catch (error) {
+      console.error("Error analyzing trends:", error);
+    }
+    setIsLoading(false);
+  };
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-orange-50 via-pink-50 to-purple-50 p-4 md:p-8">
+      <div className="max-w-6xl mx-auto">
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="mb-8"
+        >
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-orange-400 to-pink-400 flex items-center justify-center">
+                <TrendingUp className="w-6 h-6 text-white" />
+              </div>
+              <div>
+                <h1 className="text-3xl font-bold text-gray-900">Fashion Trends</h1>
+                <p className="text-gray-600">AI-powered insights on current fashion trends</p>
+              </div>
+            </div>
+            <Button
+              onClick={analyzeTrends}
+              disabled={isLoading}
+              variant="outline"
+            >
+              <RefreshCw className={`w-4 h-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
+              Refresh
+            </Button>
+          </div>
+        </motion.div>
+
+        {isLoading ? (
+          <div className="flex items-center justify-center py-20">
+            <div className="text-center">
+              <Loader2 className="w-12 h-12 mx-auto mb-4 animate-spin text-purple-500" />
+              <p className="text-gray-600">Analyzing global fashion trends...</p>
+            </div>
+          </div>
+        ) : trends ? (
+          <div className="space-y-6">
+            {/* Top Colors */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Palette className="w-5 h-5 text-purple-500" />
+                  Trending Colors
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                  {trends.top_colors?.map((color, i) => (
+                    <div key={i} className="space-y-2">
+                      <div
+                        className="h-24 rounded-lg border-2 border-gray-200"
+                        style={{ backgroundColor: color.hex }}
+                      />
+                      <div>
+                        <p className="font-semibold text-gray-900">{color.name}</p>
+                        <p className="text-xs text-gray-500">{color.hex}</p>
+                        <p className="text-sm text-gray-600 mt-1">{color.description}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {/* Popular Styles */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Sparkles className="w-5 h-5 text-pink-500" />
+                    Popular Styles
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-2">
+                    {trends.popular_styles?.map((style, i) => (
+                      <div key={i} className="flex items-center gap-2">
+                        <div className="w-2 h-2 rounded-full bg-pink-500" />
+                        <span className="text-gray-700">{style}</span>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Garment Types */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Shirt className="w-5 h-5 text-blue-500" />
+                    Hot Garment Types
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-2">
+                    {trends.garment_types?.map((garment, i) => (
+                      <div key={i} className="flex items-center gap-2">
+                        <Badge variant="outline">{i + 1}</Badge>
+                        <span className="text-gray-700">{garment}</span>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Materials */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <BarChart3 className="w-5 h-5 text-green-500" />
+                  Trending Materials
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {trends.materials?.map((material, i) => (
+                    <div key={i} className="bg-gray-50 rounded-lg p-4">
+                      <h4 className="font-semibold text-gray-900 mb-1">{material.name}</h4>
+                      <p className="text-sm text-gray-600">{material.reason}</p>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Design Elements */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Sparkles className="w-5 h-5 text-purple-500" />
+                  Design Elements & Patterns
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="flex flex-wrap gap-2">
+                  {trends.design_elements?.map((element, i) => (
+                    <Badge key={i} variant="outline" className="text-sm">
+                      {element}
+                    </Badge>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Forecast */}
+            <Card className="bg-gradient-to-r from-purple-50 to-pink-50 border-purple-200">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Calendar className="w-5 h-5 text-purple-500" />
+                  Seasonal Forecast
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-gray-700">{trends.forecast}</p>
+              </CardContent>
+            </Card>
+
+            {/* CTA */}
+            <Card className="bg-gradient-to-r from-orange-500 to-pink-500 text-white">
+              <CardContent className="p-8 text-center">
+                <h3 className="text-2xl font-bold mb-2">Ready to Create?</h3>
+                <p className="mb-6 opacity-90">
+                  Use these trend insights to design your next bestseller
+                </p>
+                <Button
+                  onClick={() => navigate(createPageUrl("CustomDesigner"))}
+                  className="bg-white text-purple-600 hover:bg-gray-100"
+                >
+                  <Palette className="w-4 h-4 mr-2" />
+                  Start Designing
+                </Button>
+              </CardContent>
+            </Card>
+          </div>
+        ) : (
+          <div className="text-center py-20">
+            <TrendingUp className="w-16 h-16 mx-auto mb-4 text-gray-300" />
+            <p className="text-gray-600">Click "Refresh" to analyze current fashion trends</p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

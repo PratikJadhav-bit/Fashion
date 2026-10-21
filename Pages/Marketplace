@@ -1,0 +1,593 @@
+import React from "react";
+import { base44 } from "@/api/base44Client";
+import { createPageUrl } from "@/utils";
+import { useNavigate } from "react-router-dom";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { motion } from "framer-motion";
+import {
+  ShoppingBag,
+  Search,
+  DollarSign,
+  Eye,
+  TrendingUp,
+  Star,
+  Filter,
+  X,
+  Sparkles,
+  Heart
+} from "lucide-react";
+import { Slider } from "@/components/ui/slider";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Label } from "@/components/ui/label";
+import AuthRequiredModal, { useAuthRequired } from "../components/auth/AuthRequiredModal";
+import StyleDNAMatchScore from "../components/marketplace/StyleDNAMatchScore";
+
+export default function Marketplace() {
+  const navigate = useNavigate();
+  const { user, isAuthenticated, showAuthModal, authModalConfig, requireAuth, closeAuthModal } = useAuthRequired();
+  const [search, setSearch] = React.useState("");
+  const [sortBy, setSortBy] = React.useState("recent");
+  const [priceRange, setPriceRange] = React.useState([0, 1000]);
+  const [selectedBrand, setSelectedBrand] = React.useState("all");
+  const [selectedStyle, setSelectedStyle] = React.useState("all");
+  const [selectedCategory, setSelectedCategory] = React.useState("all");
+  const [selectedOccasion, setSelectedOccasion] = React.useState("all");
+  const [selectedSeason, setSelectedSeason] = React.useState("all");
+  const [selectedColor, setSelectedColor] = React.useState("all");
+  const [selectedGender, setSelectedGender] = React.useState("all");
+  const [showFilters, setShowFilters] = React.useState(false);
+  const [activeFilters, setActiveFilters] = React.useState([]);
+
+  const { data: listings = [], isLoading } = useQuery({
+    queryKey: ['productListings'],
+    queryFn: () => base44.entities.ProductListing.filter({ is_active: true }, '-created_date'),
+    initialData: [],
+  });
+
+  const { data: affiliateProducts = [] } = useQuery({
+    queryKey: ['affiliateProducts'],
+    queryFn: () => base44.entities.AffiliateProduct.filter({ is_active: true }),
+    initialData: [],
+  });
+
+  const { data: userProfile } = useQuery({
+    queryKey: ['userProfile', user?.email],
+    queryFn: async () => {
+      if (!user?.email) return null;
+      const profiles = await base44.entities.UserProfile.filter({ user_email: user.email });
+      return profiles[0] || null;
+    },
+    enabled: !!user?.email,
+  });
+
+  const { data: wishlist = [] } = useQuery({
+    queryKey: ['wishlist', user?.email],
+    queryFn: () => base44.entities.Wishlist.filter({ user_email: user.email }),
+    enabled: !!user?.email,
+    initialData: [],
+  });
+
+  const queryClient = useQueryClient();
+
+  const addToWishlistMutation = useMutation({
+    mutationFn: async (product) => {
+      const existing = wishlist.find(w => w.product_id === product.id);
+      if (existing) {
+        return base44.entities.Wishlist.delete(existing.id);
+      }
+      return base44.entities.Wishlist.create({
+        user_email: user.email,
+        product_id: product.id,
+        product_name: product.product_name,
+        product_url: product.product_url,
+        image_url: product.image_url,
+        price: product.price
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['wishlist'] });
+    }
+  });
+
+  const handleAddToWishlist = (product, e) => {
+    e.stopPropagation();
+    if (!requireAuth({
+      title: "Save to Wishlist",
+      message: "Sign in to save items to your wishlist and access them anytime."
+    })) return;
+    addToWishlistMutation.mutate(product);
+  };
+
+  const isInWishlist = (productId) => wishlist.some(w => w.product_id === productId);
+
+  const { data: trendingProducts, isLoading: trendingLoading } = useQuery({
+    queryKey: ['trendingProducts', userProfile?.style_preferences],
+    queryFn: async () => {
+      if (!userProfile) return [];
+      
+      const prompt = `Based on user style preferences: ${userProfile.style_preferences?.join(', ')}, 
+      favorite colors: ${userProfile.favorite_colors?.join(', ')},
+      and budget: ${userProfile.budget_range},
+      
+      recommend 6 trending fashion items. Return JSON array with: category, description, price_range, style_tags.`;
+      
+      const result = await base44.integrations.Core.InvokeLLM({
+        prompt: prompt,
+        add_context_from_internet: true,
+        response_json_schema: {
+          type: "object",
+          properties: {
+            recommendations: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  category: { type: "string" },
+                  description: { type: "string" },
+                  price_range: { type: "string" },
+                  style_tags: { type: "array", items: { type: "string" } }
+                }
+              }
+            }
+          }
+        }
+      });
+      
+      return result.recommendations || [];
+    },
+    enabled: !!userProfile,
+    initialData: [],
+  });
+
+  // Combine both listings and affiliate products
+  const allProducts = [
+    ...listings.map(l => ({ ...l, source: 'marketplace' })),
+    ...affiliateProducts.map(p => ({
+      id: p.id,
+      product_name: p.product_name,
+      description: `${p.category} - ${p.style_tags?.join(', ')}`,
+      price: p.price,
+      views_count: 0,
+      sales_count: 0,
+      seller_name: p.source_platform,
+      product_url: p.product_url,
+      image_url: p.image_url,
+      brand: p.source_platform,
+      style_tags: p.style_tags,
+      source: 'affiliate'
+    }))
+  ];
+
+  const brands = [...new Set(allProducts.map(p => p.brand || p.seller_name).filter(Boolean))];
+  const styles = [...new Set(allProducts.flatMap(p => p.style_tags || []).filter(Boolean))];
+  const categories = [...new Set(allProducts.map(p => p.category).filter(Boolean))];
+  const occasions = [...new Set(allProducts.flatMap(p => p.occasion_type || []).filter(Boolean))];
+  const seasons = [...new Set(allProducts.flatMap(p => p.season || []).filter(Boolean))];
+  const colors = [...new Set(allProducts.map(p => p.color).filter(Boolean))];
+  const genders = [...new Set(allProducts.map(p => p.gender).filter(Boolean))];
+
+  // Update active filters count
+  React.useEffect(() => {
+    const filters = [];
+    if (selectedBrand !== "all") filters.push({ type: "Brand", value: selectedBrand });
+    if (selectedStyle !== "all") filters.push({ type: "Style", value: selectedStyle });
+    if (selectedCategory !== "all") filters.push({ type: "Category", value: selectedCategory });
+    if (selectedOccasion !== "all") filters.push({ type: "Occasion", value: selectedOccasion });
+    if (selectedSeason !== "all") filters.push({ type: "Season", value: selectedSeason });
+    if (selectedColor !== "all") filters.push({ type: "Color", value: selectedColor });
+    if (selectedGender !== "all") filters.push({ type: "Gender", value: selectedGender });
+    if (priceRange[0] !== 0 || priceRange[1] !== 1000) filters.push({ type: "Price", value: `$${priceRange[0]}-$${priceRange[1]}` });
+    setActiveFilters(filters);
+  }, [selectedBrand, selectedStyle, selectedCategory, selectedOccasion, selectedSeason, selectedColor, selectedGender, priceRange]);
+
+  const clearFilter = (filterType) => {
+    switch(filterType) {
+      case "Brand": setSelectedBrand("all"); break;
+      case "Style": setSelectedStyle("all"); break;
+      case "Category": setSelectedCategory("all"); break;
+      case "Occasion": setSelectedOccasion("all"); break;
+      case "Season": setSelectedSeason("all"); break;
+      case "Color": setSelectedColor("all"); break;
+      case "Gender": setSelectedGender("all"); break;
+      case "Price": setPriceRange([0, 1000]); break;
+    }
+  };
+
+  const filteredProducts = allProducts
+    .filter(product => {
+      const matchesSearch = product.product_name.toLowerCase().includes(search.toLowerCase()) ||
+        product.description?.toLowerCase().includes(search.toLowerCase()) ||
+        product.color?.toLowerCase().includes(search.toLowerCase()) ||
+        product.style_tags?.some(tag => tag.toLowerCase().includes(search.toLowerCase()));
+      const matchesPrice = product.price >= priceRange[0] && product.price <= priceRange[1];
+      const matchesBrand = selectedBrand === "all" || product.brand === selectedBrand || product.seller_name === selectedBrand;
+      const matchesStyle = selectedStyle === "all" || product.style_tags?.includes(selectedStyle);
+      const matchesCategory = selectedCategory === "all" || product.category === selectedCategory;
+      const matchesOccasion = selectedOccasion === "all" || product.occasion_type?.includes(selectedOccasion);
+      const matchesSeason = selectedSeason === "all" || product.season?.includes(selectedSeason);
+      const matchesColor = selectedColor === "all" || product.color?.toLowerCase().includes(selectedColor.toLowerCase());
+      const matchesGender = selectedGender === "all" || product.gender === selectedGender;
+      return matchesSearch && matchesPrice && matchesBrand && matchesStyle && matchesCategory && matchesOccasion && matchesSeason && matchesColor && matchesGender;
+    })
+    .sort((a, b) => {
+      switch(sortBy) {
+        case 'price_low': return a.price - b.price;
+        case 'price_high': return b.price - a.price;
+        case 'popular': return (b.views_count || 0) - (a.views_count || 0);
+        case 'sales': return (b.sales_count || 0) - (a.sales_count || 0);
+        default: return new Date(b.created_date) - new Date(a.created_date);
+      }
+    });
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-purple-50 to-pink-50 p-4 md:p-8">
+      <div className="max-w-7xl mx-auto">
+        {/* Header */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="mb-8"
+        >
+          <div className="flex items-center gap-3 mb-4">
+            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-400 to-purple-400 flex items-center justify-center">
+              <ShoppingBag className="w-6 h-6 text-white" />
+            </div>
+            <div>
+              <h1 className="text-3xl font-bold text-gray-900">Marketplace</h1>
+              <p className="text-gray-600">Discover and purchase custom designs</p>
+            </div>
+          </div>
+
+          {/* Search and Filters */}
+          <div className="space-y-4">
+            <div className="flex flex-col md:flex-row gap-4">
+              <div className="flex-1 relative">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+                <Input
+                  placeholder="Search products..."
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  className="pl-10"
+                />
+              </div>
+              <Button
+                variant="outline"
+                onClick={() => setShowFilters(!showFilters)}
+                className="w-full md:w-auto"
+              >
+                <Filter className="w-4 h-4 mr-2" />
+                Filters {activeFilters.length > 0 && `(${activeFilters.length})`}
+              </Button>
+              <Select value={sortBy} onValueChange={setSortBy}>
+                <SelectTrigger className="w-full md:w-48">
+                  <SelectValue placeholder="Sort by" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="recent">Most Recent</SelectItem>
+                  <SelectItem value="popular">Most Popular</SelectItem>
+                  <SelectItem value="sales">Best Selling</SelectItem>
+                  <SelectItem value="price_low">Price: Low to High</SelectItem>
+                  <SelectItem value="price_high">Price: High to Low</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Active Filters Display */}
+            {activeFilters.length > 0 && (
+              <div className="flex flex-wrap gap-2">
+                {activeFilters.map((filter, i) => (
+                  <Badge
+                    key={i}
+                    variant="secondary"
+                    className="px-3 py-1 cursor-pointer hover:bg-red-100"
+                    onClick={() => clearFilter(filter.type)}
+                  >
+                    {filter.type}: {filter.value}
+                    <X className="w-3 h-3 ml-2" />
+                  </Badge>
+                ))}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setPriceRange([0, 1000]);
+                    setSelectedBrand("all");
+                    setSelectedStyle("all");
+                    setSelectedCategory("all");
+                    setSelectedOccasion("all");
+                    setSelectedSeason("all");
+                    setSelectedColor("all");
+                    setSelectedGender("all");
+                  }}
+                  className="h-7 text-xs"
+                >
+                  Clear All
+                </Button>
+              </div>
+            )}
+
+            {/* Advanced Filters */}
+            {showFilters && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: "auto" }}
+                exit={{ opacity: 0, height: 0 }}
+              >
+                <Card className="p-4">
+                  <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                    <div>
+                      <Label className="mb-2 block font-semibold">Price Range</Label>
+                      <div className="text-sm text-gray-600 mb-2">${priceRange[0]} - ${priceRange[1]}</div>
+                      <Slider
+                        value={priceRange}
+                        onValueChange={setPriceRange}
+                        max={1000}
+                        step={10}
+                        className="mt-2"
+                      />
+                    </div>
+
+                    <div>
+                      <Label className="mb-2 block font-semibold">Category</Label>
+                      <Select value={selectedCategory} onValueChange={setSelectedCategory}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="All Categories" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">All Categories</SelectItem>
+                          {categories.map(cat => (
+                            <SelectItem key={cat} value={cat}>
+                              {cat.charAt(0).toUpperCase() + cat.slice(1)}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div>
+                      <Label className="mb-2 block font-semibold">Brand</Label>
+                      <Select value={selectedBrand} onValueChange={setSelectedBrand}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="All Brands" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">All Brands</SelectItem>
+                          {brands.map(brand => (
+                            <SelectItem key={brand} value={brand}>{brand}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div>
+                      <Label className="mb-2 block font-semibold">Style</Label>
+                      <Select value={selectedStyle} onValueChange={setSelectedStyle}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="All Styles" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">All Styles</SelectItem>
+                          {styles.map(style => (
+                            <SelectItem key={style} value={style}>{style}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div>
+                      <Label className="mb-2 block font-semibold">Occasion</Label>
+                      <Select value={selectedOccasion} onValueChange={setSelectedOccasion}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="All Occasions" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">All Occasions</SelectItem>
+                          {occasions.map(occ => (
+                            <SelectItem key={occ} value={occ}>
+                              {occ.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div>
+                      <Label className="mb-2 block font-semibold">Season</Label>
+                      <Select value={selectedSeason} onValueChange={setSelectedSeason}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="All Seasons" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">All Seasons</SelectItem>
+                          {seasons.map(season => (
+                            <SelectItem key={season} value={season}>
+                              {season.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div>
+                      <Label className="mb-2 block font-semibold">Color</Label>
+                      <Select value={selectedColor} onValueChange={setSelectedColor}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="All Colors" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">All Colors</SelectItem>
+                          {colors.map(color => (
+                            <SelectItem key={color} value={color}>{color}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div>
+                      <Label className="mb-2 block font-semibold">Gender</Label>
+                      <Select value={selectedGender} onValueChange={setSelectedGender}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="All Genders" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">All Genders</SelectItem>
+                          {genders.map(gender => (
+                            <SelectItem key={gender} value={gender}>
+                              {gender.charAt(0).toUpperCase() + gender.slice(1)}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                </Card>
+              </motion.div>
+            )}
+          </div>
+        </motion.div>
+
+        {/* AI Trending Products */}
+        {user && trendingProducts.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mb-8"
+          >
+            <Card className="bg-gradient-to-r from-purple-50 to-pink-50 border-purple-200">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Sparkles className="w-5 h-5 text-purple-500" />
+                  AI Trending Picks For You
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  {trendingProducts.slice(0, 3).map((item, i) => (
+                    <div key={i} className="bg-white rounded-lg p-4 border border-purple-100">
+                      <Badge className="mb-2">{item.category}</Badge>
+                      <p className="text-sm text-gray-700 mb-2">{item.description}</p>
+                      <div className="flex flex-wrap gap-1">
+                        {item.style_tags?.slice(0, 3).map(tag => (
+                          <Badge key={tag} variant="outline" className="text-xs">{tag}</Badge>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          </motion.div>
+        )}
+
+        {/* Products Grid */}
+        {isLoading ? (
+          <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-6">
+            {[...Array(8)].map((_, i) => (
+              <Skeleton key={i} className="h-80 w-full rounded-lg" />
+            ))}
+          </div>
+        ) : filteredProducts.length === 0 ? (
+          <div className="text-center py-16">
+            <ShoppingBag className="w-16 h-16 mx-auto mb-4 text-gray-300" />
+            <h3 className="text-xl font-semibold text-gray-900 mb-2">
+              {search ? "No products found" : "No products available yet"}
+            </h3>
+            <p className="text-gray-600">Check back soon for new listings!</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-6">
+            {filteredProducts.map((listing, index) => (
+              <motion.div
+                key={listing.id}
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ delay: index * 0.05 }}
+              >
+                <Card 
+                  className="group cursor-pointer hover:shadow-2xl transition-all duration-300"
+                  onClick={() => {
+                    if (listing.source === 'affiliate' && listing.product_url) {
+                      window.open(listing.product_url, '_blank');
+                    } else {
+                      navigate(createPageUrl("ProductDetail") + "?id=" + listing.id);
+                    }
+                  }}
+                >
+                  <div className="h-48 bg-gray-100 relative overflow-hidden">
+                    {listing.image_url ? (
+                      <img src={listing.image_url} alt={listing.product_name} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300" />
+                    ) : (
+                      <div className="absolute inset-0 flex items-center justify-center text-7xl opacity-30">
+                        👕
+                      </div>
+                    )}
+                    <div className="absolute top-2 right-2 flex gap-1">
+                      {listing.source === 'affiliate' ? (
+                        <Badge className="bg-purple-500 text-white">Affiliate</Badge>
+                      ) : (
+                        <Badge className="bg-white/90 text-gray-700">
+                          <Eye className="w-3 h-3 mr-1" />
+                          {listing.views_count || 0}
+                        </Badge>
+                      )}
+                    </div>
+                    <button
+                      onClick={(e) => handleAddToWishlist(listing, e)}
+                      className={`absolute top-2 left-2 p-2 rounded-full transition-colors ${
+                        isInWishlist(listing.id)
+                          ? "bg-pink-500 text-white"
+                          : "bg-white/80 text-gray-600 hover:bg-pink-100 hover:text-pink-600"
+                      }`}
+                    >
+                      <Heart className={`w-4 h-4 ${isInWishlist(listing.id) ? "fill-current" : ""}`} />
+                    </button>
+                  </div>
+
+                  <CardContent className="p-4">
+                    <h3 className="font-semibold text-gray-900 mb-1 line-clamp-1">
+                      {listing.product_name}
+                    </h3>
+                    <p className="text-sm text-gray-500 mb-2 line-clamp-2">
+                      {listing.description}
+                    </p>
+                    
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1 text-xl font-bold text-purple-600">
+                        <DollarSign className="w-5 h-5" />
+                        {listing.price.toFixed(2)}
+                      </div>
+                      {listing.sales_count > 0 && (
+                        <Badge variant="outline" className="text-xs">
+                          <TrendingUp className="w-3 h-3 mr-1" />
+                          {listing.sales_count} sold
+                        </Badge>
+                      )}
+                    </div>
+
+                    <p className="text-xs text-gray-500 mt-2">
+                      by {listing.seller_name || listing.seller_email?.split('@')[0] || 'Unknown'}
+                    </p>
+
+                    {/* Style DNA Match Score */}
+                    <StyleDNAMatchScore product={listing} userProfile={userProfile} />
+                  </CardContent>
+                </Card>
+              </motion.div>
+            ))}
+          </div>
+        )}
+
+        <AuthRequiredModal
+          isOpen={showAuthModal}
+          onClose={closeAuthModal}
+          {...authModalConfig}
+        />
+      </div>
+    </div>
+  );
+}

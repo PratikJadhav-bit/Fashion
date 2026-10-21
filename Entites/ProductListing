@@ -1,0 +1,70 @@
+{
+  "name": "ProductListing",
+  "type": "object",
+  "properties": {
+    "design_id": {
+      "type": "string",
+      "description": "ID of the custom design"
+    },
+    "seller_email": {
+      "type": "string",
+      "description": "Email of the seller"
+    },
+    "seller_name": {
+      "type": "string",
+      "description": "Name of the seller"
+    },
+    "product_name": {
+      "type": "string",
+      "description": "Name of the product"
+    },
+    "description": {
+      "type": "string",
+      "description": "Product description"
+    },
+    "price": {
+      "type": "number",
+      "description": "Product price"
+    },
+    "available_sizes": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Available sizes"
+    },
+    "available_materials": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Available materials"
+    },
+    "stock_quantity": {
+      "type": "number",
+      "default": 0,
+      "description": "Stock quantity"
+    },
+    "is_active": {
+      "type": "boolean",
+      "default": true,
+      "description": "Whether listing is active"
+    },
+    "views_count": {
+      "type": "number",
+      "default": 0,
+      "description": "Number of views"
+    },
+    "sales_count": {
+      "type": "number",
+      "default": 0,
+      "description": "Number of sales"
+    }
+  },
+  "required": [
+    "design_id",
+    "seller_email",
+    "product_name",
+    "price"
+  ]
+}

@@ -1,0 +1,384 @@
+import React, { useState } from "react";
+import { base44 } from "@/api/base44Client";
+import { createPageUrl } from "@/utils";
+import { useNavigate } from "react-router-dom";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Badge } from "@/components/ui/badge";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { motion } from "framer-motion";
+import {
+  Heart,
+  Search,
+  TrendingUp,
+  Clock,
+  Sparkles,
+  Eye,
+  Copy,
+  MessageCircle,
+  User,
+  Send
+} from "lucide-react";
+import { Skeleton } from "@/components/ui/skeleton";
+
+export default function CommunityGallery() {
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const [user, setUser] = useState(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [sortBy, setSortBy] = useState("trending");
+  const [selectedDesign, setSelectedDesign] = useState(null);
+  const [commentText, setCommentText] = useState("");
+
+  React.useEffect(() => {
+    const loadUser = async () => {
+      try {
+        const currentUser = await base44.auth.me();
+        setUser(currentUser);
+      } catch (error) {
+        // User not logged in
+      }
+    };
+    loadUser();
+  }, []);
+
+  const { data: publicDesigns = [], isLoading } = useQuery({
+    queryKey: ['publicDesigns', sortBy],
+    queryFn: async () => {
+      const designs = await base44.entities.CustomDesign.filter({ is_public: true });
+      
+      if (sortBy === "trending") {
+        return designs.sort((a, b) => b.likes_count - a.likes_count);
+      } else if (sortBy === "recent") {
+        return designs.sort((a, b) => new Date(b.created_date) - new Date(a.created_date));
+      }
+      return designs;
+    },
+    initialData: [],
+  });
+
+  const likeMutation = useMutation({
+    mutationFn: async (designId) => {
+      const design = publicDesigns.find(d => d.id === designId);
+      return await base44.entities.CustomDesign.update(designId, {
+        likes_count: (design.likes_count || 0) + 1
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['publicDesigns'] });
+    },
+  });
+
+  const { data: comments = [] } = useQuery({
+    queryKey: ['designComments', selectedDesign?.id],
+    queryFn: () => base44.entities.DesignComment.filter({ design_id: selectedDesign.id }, '-created_date'),
+    enabled: !!selectedDesign?.id,
+    initialData: [],
+  });
+
+  const commentMutation = useMutation({
+    mutationFn: async (data) => {
+      return await base44.entities.DesignComment.create(data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['designComments'] });
+      setCommentText("");
+    },
+  });
+
+  const duplicateDesign = (design) => {
+    if (!user) {
+      base44.auth.redirectToLogin(createPageUrl("CommunityGallery"));
+      return;
+    }
+    
+    const designCopy = {
+      ...design,
+      user_email: user.email,
+      design_name: `${design.design_name} (Remix by ${user.email.split('@')[0]})`,
+      is_public: false,
+      likes_count: 0,
+      status: "draft",
+      remixed_from: design.id,
+      original_creator: design.user_email,
+      original_creator_name: design.user_email.split('@')[0]
+    };
+    
+    sessionStorage.setItem("currentDesign", JSON.stringify(designCopy));
+    sessionStorage.setItem("showRemixAttribution", "true");
+    navigate(createPageUrl("DesignEditor"));
+  };
+
+  const handleComment = () => {
+    if (!user) {
+      base44.auth.redirectToLogin(createPageUrl("CommunityGallery"));
+      return;
+    }
+
+    if (!commentText.trim()) return;
+
+    commentMutation.mutate({
+      design_id: selectedDesign.id,
+      user_email: user.email,
+      user_name: user.full_name || user.email.split('@')[0],
+      comment_text: commentText
+    });
+  };
+
+  const filteredDesigns = publicDesigns.filter(design =>
+    design.design_name?.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  return (
+    <div className="p-4 md:p-8 max-w-7xl mx-auto">
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="mb-8"
+      >
+        <div className="flex items-center gap-3 mb-4">
+          <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-purple-400 to-pink-400 flex items-center justify-center">
+            <Sparkles className="w-6 h-6 text-white" />
+          </div>
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900">Community Gallery</h1>
+            <p className="text-gray-600">Discover amazing designs from our community</p>
+          </div>
+        </div>
+
+        <div className="flex flex-col md:flex-row gap-4">
+          <div className="flex-1 relative">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+            <Input
+              placeholder="Search designs..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-10"
+            />
+          </div>
+          <div className="flex gap-2">
+            <Button
+              variant={sortBy === "trending" ? "default" : "outline"}
+              onClick={() => setSortBy("trending")}
+              className={sortBy === "trending" ? "bg-purple-500" : ""}
+            >
+              <TrendingUp className="w-4 h-4 mr-2" />
+              Trending
+            </Button>
+            <Button
+              variant={sortBy === "recent" ? "default" : "outline"}
+              onClick={() => setSortBy("recent")}
+              className={sortBy === "recent" ? "bg-purple-500" : ""}
+            >
+              <Clock className="w-4 h-4 mr-2" />
+              Recent
+            </Button>
+          </div>
+        </div>
+      </motion.div>
+
+      {isLoading ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {[...Array(6)].map((_, i) => (
+            <Card key={i}>
+              <Skeleton className="h-64 w-full" />
+              <CardContent className="p-4 space-y-2">
+                <Skeleton className="h-4 w-3/4" />
+                <Skeleton className="h-3 w-1/2" />
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      ) : filteredDesigns.length === 0 ? (
+        <div className="text-center py-16">
+          <Sparkles className="w-16 h-16 mx-auto mb-4 text-gray-300" />
+          <h3 className="text-xl font-semibold text-gray-900 mb-2">
+            No designs found
+          </h3>
+          <p className="text-gray-600">
+            Be the first to share your design with the community!
+          </p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {filteredDesigns.map((design) => (
+            <motion.div
+              key={design.id}
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              whileHover={{ scale: 1.02 }}
+              transition={{ duration: 0.2 }}
+            >
+              <Card className="overflow-hidden hover:shadow-xl transition-shadow">
+                <div 
+                  className="h-64 relative flex items-center justify-center"
+                  style={{ backgroundColor: design.base_color }}
+                >
+                  <div className="text-7xl opacity-20">👕</div>
+                  {design.graphics?.slice(0, 3).map((graphic) => (
+                    <div
+                      key={graphic.id}
+                      className="absolute"
+                      style={{
+                        left: `${graphic.position_x}%`,
+                        top: `${graphic.position_y}%`,
+                        transform: `translate(-50%, -50%) scale(${graphic.scale * 0.8})`,
+                      }}
+                    >
+                      {graphic.type === "image" ? (
+                        <img
+                          src={graphic.content}
+                          alt="Graphic"
+                          className="max-w-20 max-h-20 object-contain"
+                        />
+                      ) : (
+                        <div
+                          style={{
+                            fontSize: `${(graphic.text_properties?.font_size || 24) * 0.8}px`,
+                            color: graphic.text_properties?.font_color,
+                          }}
+                          className="font-bold"
+                        >
+                          {graphic.content}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+
+                <CardContent className="p-4">
+                  <div className="flex items-start justify-between mb-2">
+                    <div className="flex-1">
+                      <h3 className="font-semibold text-lg line-clamp-1">
+                        {design.design_name}
+                      </h3>
+                      <p className="text-sm text-gray-500">
+                        by {design.user_email?.split('@')[0]}
+                      </p>
+                    </div>
+                    <Badge variant="secondary">
+                      ${design.estimated_price?.toFixed(2)}
+                    </Badge>
+                  </div>
+
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3 text-sm text-gray-600">
+                      <button
+                        onClick={() => likeMutation.mutate(design.id)}
+                        className="flex items-center gap-1 hover:text-red-500 transition-colors"
+                      >
+                        <Heart className="w-4 h-4" />
+                        {design.likes_count || 0}
+                      </button>
+                      <button
+                        onClick={() => setSelectedDesign(design)}
+                        className="flex items-center gap-1 hover:text-blue-500 transition-colors"
+                      >
+                        <MessageCircle className="w-4 h-4" />
+                        Comment
+                      </button>
+                      <button
+                        onClick={() => navigate(createPageUrl("UserProfile") + "?email=" + design.user_email)}
+                        className="flex items-center gap-1 hover:text-purple-500 transition-colors"
+                      >
+                        <User className="w-4 h-4" />
+                        Profile
+                      </button>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => duplicateDesign(design)}
+                    >
+                      <Copy className="w-4 h-4 mr-1" />
+                      Remix
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            </motion.div>
+          ))}
+        </div>
+      )}
+
+      {/* Comments Dialog */}
+      <Dialog open={!!selectedDesign} onOpenChange={() => setSelectedDesign(null)}>
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{selectedDesign?.design_name}</DialogTitle>
+          </DialogHeader>
+
+          {selectedDesign && (
+            <div className="space-y-4">
+              {/* Design Preview */}
+              <div 
+                className="h-48 rounded-lg relative flex items-center justify-center"
+                style={{ backgroundColor: selectedDesign.base_color }}
+              >
+                <div className="text-7xl opacity-20">👕</div>
+              </div>
+
+              {/* Comments Section */}
+              <div className="space-y-4">
+                <h3 className="font-semibold text-lg">Comments ({comments.length})</h3>
+                
+                {/* Comment Input */}
+                {user && (
+                  <div className="flex gap-2">
+                    <Textarea
+                      placeholder="Write a comment..."
+                      value={commentText}
+                      onChange={(e) => setCommentText(e.target.value)}
+                      rows={2}
+                      className="flex-1"
+                    />
+                    <Button
+                      onClick={handleComment}
+                      disabled={commentMutation.isPending || !commentText.trim()}
+                      className="bg-gradient-to-r from-purple-500 to-pink-500"
+                    >
+                      <Send className="w-4 h-4" />
+                    </Button>
+                  </div>
+                )}
+
+                {/* Comments List */}
+                <div className="space-y-3">
+                  {comments.length === 0 ? (
+                    <p className="text-sm text-gray-500 text-center py-8">
+                      No comments yet. Be the first to comment!
+                    </p>
+                  ) : (
+                    comments.map((comment) => (
+                      <div key={comment.id} className="bg-gray-50 rounded-lg p-3">
+                        <div className="flex items-center gap-2 mb-1">
+                          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-purple-400 to-pink-400 flex items-center justify-center text-white text-sm font-bold">
+                            {comment.user_email[0].toUpperCase()}
+                          </div>
+                          <div>
+                            <p className="font-semibold text-sm">
+                              {comment.user_name || comment.user_email.split('@')[0]}
+                            </p>
+                            <p className="text-xs text-gray-500">
+                              {new Date(comment.created_date).toLocaleDateString()}
+                            </p>
+                          </div>
+                        </div>
+                        <p className="text-sm text-gray-700 ml-10">
+                          {comment.comment_text}
+                        </p>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}

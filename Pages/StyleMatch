@@ -1,0 +1,377 @@
+import React from "react";
+import { base44 } from "@/api/base44Client";
+import { createPageUrl } from "@/utils";
+import { useNavigate } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { motion } from "framer-motion";
+import {
+  Sparkles,
+  Upload,
+  Loader2,
+  Camera,
+  ShoppingBag,
+  Shirt,
+  ExternalLink
+} from "lucide-react";
+
+export default function StyleMatch() {
+  const navigate = useNavigate();
+  const [user, setUser] = React.useState(null);
+  const [uploadedImage, setUploadedImage] = React.useState(null);
+  const [isAnalyzing, setIsAnalyzing] = React.useState(false);
+  const [analysis, setAnalysis] = React.useState(null);
+  const fileInputRef = React.useRef(null);
+
+  React.useEffect(() => {
+    const loadUser = async () => {
+      try {
+        const currentUser = await base44.auth.me();
+        setUser(currentUser);
+      } catch (error) {
+        base44.auth.redirectToLogin(createPageUrl("StyleMatch"));
+      }
+    };
+    loadUser();
+  }, []);
+
+  const { data: wardrobeItems = [] } = useQuery({
+    queryKey: ['wardrobe', user?.email],
+    queryFn: () => base44.entities.WardrobeItem.filter({ user_email: user.email }),
+    enabled: !!user?.email,
+    initialData: [],
+  });
+
+  const { data: affiliateProducts = [] } = useQuery({
+    queryKey: ['affiliateProducts'],
+    queryFn: () => base44.entities.AffiliateProduct.filter({ is_active: true }),
+    enabled: !!user?.email,
+    initialData: [],
+  });
+
+  const handleImageUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const { file_url } = await base44.integrations.Core.UploadFile({ file });
+      setUploadedImage(file_url);
+      analyzeStyle(file_url);
+    } catch (error) {
+      console.error("Error uploading image:", error);
+    }
+  };
+
+  const analyzeStyle = async (imageUrl) => {
+    setIsAnalyzing(true);
+    try {
+      const wardrobeInfo = wardrobeItems.map(item => ({
+        name: item.item_name,
+        category: item.category,
+        colors: item.colors,
+        style_tags: item.style_tags
+      }));
+
+      const prompt = `Analyze this fashion image and provide detailed insights:
+
+1. Identify the main colors in the outfit (provide hex codes if possible)
+2. Describe the overall style (e.g., casual, formal, bohemian, minimalist, sporty)
+3. List specific garment types visible (e.g., denim jacket, white t-shirt, black jeans)
+4. Note key style elements (patterns, textures, accessories)
+
+Then, based on the user's wardrobe:
+${JSON.stringify(wardrobeInfo)}
+
+Suggest:
+- Which items from their wardrobe would create a similar look
+- What categories of items they're missing to recreate this style
+
+Format as JSON with clear sections.`;
+
+      const result = await base44.integrations.Core.InvokeLLM({
+        prompt: prompt,
+        add_context_from_internet: false,
+        file_urls: [imageUrl],
+        response_json_schema: {
+          type: "object",
+          properties: {
+            colors: { type: "array", items: { type: "string" } },
+            style_description: { type: "string" },
+            garment_types: { type: "array", items: { type: "string" } },
+            key_elements: { type: "array", items: { type: "string" } },
+            wardrobe_matches: { type: "array", items: { type: "string" } },
+            missing_items: { type: "array", items: { type: "string" } }
+          }
+        }
+      });
+
+      // Find matching affiliate products
+      const matchingProducts = affiliateProducts.filter(product => {
+        // Match by style tags
+        const styleMatch = result.key_elements?.some(element => 
+          product.style_tags?.some(tag => 
+            tag.toLowerCase().includes(element.toLowerCase()) ||
+            element.toLowerCase().includes(tag.toLowerCase())
+          )
+        );
+        
+        // Match by garment type
+        const garmentMatch = result.garment_types?.some(garment =>
+          garment.toLowerCase().includes(product.category)
+        );
+
+        return styleMatch || garmentMatch;
+      }).slice(0, 6);
+
+      result.recommended_products = matchingProducts;
+      setAnalysis(result);
+    } catch (error) {
+      console.error("Error analyzing style:", error);
+    }
+    setIsAnalyzing(false);
+  };
+
+  if (!user) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-pink-500" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-purple-50 to-pink-50 p-4 md:p-8">
+      <div className="max-w-6xl mx-auto">
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="mb-8"
+        >
+          <div className="flex items-center gap-3 mb-4">
+            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-400 to-purple-400 flex items-center justify-center">
+              <Camera className="w-6 h-6 text-white" />
+            </div>
+            <div>
+              <h1 className="text-3xl font-bold text-gray-900">Style Match</h1>
+              <p className="text-gray-600">Upload an outfit image to find similar items</p>
+            </div>
+          </div>
+        </motion.div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+          {/* Upload Section */}
+          <motion.div
+            initial={{ opacity: 0, x: -20 }}
+            animate={{ opacity: 1, x: 0 }}
+          >
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Upload className="w-5 h-5 text-blue-500" />
+                  Upload Inspiration Photo
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {!uploadedImage ? (
+                  <div
+                    onClick={() => fileInputRef.current?.click()}
+                    className="border-2 border-dashed border-gray-300 rounded-lg p-12 text-center cursor-pointer hover:border-blue-500 hover:bg-blue-50 transition-all"
+                  >
+                    <Camera className="w-12 h-12 mx-auto mb-4 text-gray-400" />
+                    <p className="text-gray-600 mb-2">Click to upload an outfit photo</p>
+                    <p className="text-sm text-gray-500">
+                      Upload a photo of an outfit you love
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    <div className="relative rounded-lg overflow-hidden">
+                      <img
+                        src={uploadedImage}
+                        alt="Uploaded outfit"
+                        className="w-full h-96 object-cover"
+                      />
+                    </div>
+                    <Button
+                      variant="outline"
+                      className="w-full"
+                      onClick={() => {
+                        setUploadedImage(null);
+                        setAnalysis(null);
+                        fileInputRef.current?.click();
+                      }}
+                    >
+                      <Upload className="w-4 h-4 mr-2" />
+                      Upload Different Photo
+                    </Button>
+                  </div>
+                )}
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={handleImageUpload}
+                  className="hidden"
+                />
+              </CardContent>
+            </Card>
+          </motion.div>
+
+          {/* Analysis Section */}
+          <motion.div
+            initial={{ opacity: 0, x: 20 }}
+            animate={{ opacity: 1, x: 0 }}
+          >
+            <Card className="h-full">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Sparkles className="w-5 h-5 text-purple-500" />
+                  Style Analysis
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {isAnalyzing ? (
+                  <div className="flex flex-col items-center justify-center py-16">
+                    <Loader2 className="w-12 h-12 animate-spin text-purple-500 mb-4" />
+                    <p className="text-gray-600">Analyzing outfit style...</p>
+                  </div>
+                ) : !analysis ? (
+                  <div className="flex flex-col items-center justify-center py-16 text-center">
+                    <Sparkles className="w-12 h-12 text-gray-300 mb-4" />
+                    <p className="text-gray-600">
+                      Upload an outfit photo to see AI-powered style analysis
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-6">
+                    {/* Colors */}
+                    {analysis.colors?.length > 0 && (
+                      <div>
+                        <h3 className="font-semibold text-lg mb-3">Color Palette</h3>
+                        <div className="flex gap-2">
+                          {analysis.colors.map((color, i) => (
+                            <div
+                              key={i}
+                              className="w-12 h-12 rounded-lg border-2 border-white shadow-sm"
+                              style={{ backgroundColor: color }}
+                              title={color}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Style Description */}
+                    {analysis.style_description && (
+                      <div>
+                        <h3 className="font-semibold text-lg mb-2">Style Description</h3>
+                        <p className="text-sm text-gray-700">{analysis.style_description}</p>
+                      </div>
+                    )}
+
+                    {/* Key Elements */}
+                    {analysis.key_elements?.length > 0 && (
+                      <div>
+                        <h3 className="font-semibold text-lg mb-3">Key Elements</h3>
+                        <div className="flex flex-wrap gap-2">
+                          {analysis.key_elements.map((element, i) => (
+                            <Badge key={i} variant="outline">{element}</Badge>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Wardrobe Matches */}
+                    {analysis.wardrobe_matches?.length > 0 && (
+                      <div>
+                        <h3 className="font-semibold text-lg mb-3 flex items-center gap-2">
+                          <Shirt className="w-5 h-5 text-green-600" />
+                          Items from Your Wardrobe
+                        </h3>
+                        <div className="space-y-2">
+                          {analysis.wardrobe_matches.map((match, i) => (
+                            <div key={i} className="bg-green-50 rounded-lg p-3 text-sm text-gray-700">
+                              {match}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Missing Items */}
+                    {analysis.missing_items?.length > 0 && (
+                      <div>
+                        <h3 className="font-semibold text-lg mb-3">Items to Complete the Look</h3>
+                        <div className="space-y-2">
+                          {analysis.missing_items.map((item, i) => (
+                            <div key={i} className="bg-purple-50 rounded-lg p-3 text-sm text-gray-700">
+                              {item}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </motion.div>
+        </div>
+
+        {/* Recommended Products */}
+        {analysis?.recommended_products?.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mt-8"
+          >
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <ShoppingBag className="w-5 h-5 text-green-600" />
+                  Similar Products You Can Buy
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                  {analysis.recommended_products.map((product) => (
+                    <a
+                      key={product.id}
+                      href={product.product_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="block group"
+                    >
+                      <Card className="hover:shadow-lg transition-all">
+                        {product.image_url && (
+                          <div className="aspect-square bg-gray-100 overflow-hidden">
+                            <img
+                              src={product.image_url}
+                              alt={product.product_name}
+                              className="w-full h-full object-cover group-hover:scale-110 transition-transform"
+                            />
+                          </div>
+                        )}
+                        <CardContent className="p-3">
+                          <p className="text-sm font-medium text-gray-900 line-clamp-2 mb-2">
+                            {product.product_name}
+                          </p>
+                          <div className="flex items-center justify-between">
+                            <Badge className="bg-green-500">₹{product.price}</Badge>
+                            <ExternalLink className="w-3 h-3 text-gray-400" />
+                          </div>
+                        </CardContent>
+                      </Card>
+                    </a>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          </motion.div>
+        )}
+      </div>
+    </div>
+  );
+}

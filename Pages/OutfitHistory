@@ -1,0 +1,537 @@
+import React from "react";
+import { base44 } from "@/api/base44Client";
+import { createPageUrl } from "@/utils";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
+import { Badge } from "@/components/ui/badge";
+import { motion, AnimatePresence } from "framer-motion";
+import { format } from "date-fns";
+import {
+  History,
+  Plus,
+  Calendar,
+  DollarSign,
+  Edit,
+  Trash2,
+  TrendingDown,
+  Star,
+  Heart
+} from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { Skeleton } from "@/components/ui/skeleton";
+
+export default function OutfitHistory() {
+  const queryClient = useQueryClient();
+  const [user, setUser] = React.useState(null);
+  const [showAddDialog, setShowAddDialog] = React.useState(false);
+  const [editingOutfit, setEditingOutfit] = React.useState(null);
+
+  const [formData, setFormData] = React.useState({
+    occasion_type: "",
+    occasion_name: "",
+    occasion_date: "",
+    outfit_description: "",
+    total_spent: 0,
+    rating: 5,
+    notes: ""
+  });
+
+  React.useEffect(() => {
+    const loadUser = async () => {
+      try {
+        const currentUser = await base44.auth.me();
+        setUser(currentUser);
+      } catch (error) {
+        base44.auth.redirectToLogin(createPageUrl("OutfitHistory"));
+      }
+    };
+    loadUser();
+  }, []);
+
+  const { data: outfitHistory = [], isLoading } = useQuery({
+    queryKey: ['outfitHistory', user?.email],
+    queryFn: () => base44.entities.OutfitHistory.filter({ user_email: user.email }, '-occasion_date'),
+    enabled: !!user?.email,
+    initialData: [],
+  });
+
+  const createMutation = useMutation({
+    mutationFn: (data) => base44.entities.OutfitHistory.create({
+      ...data,
+      user_email: user.email
+    }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['outfitHistory'] });
+      resetForm();
+      setShowAddDialog(false);
+    },
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: ({ id, data }) => base44.entities.OutfitHistory.update(id, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['outfitHistory'] });
+      resetForm();
+      setShowAddDialog(false);
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id) => base44.entities.OutfitHistory.delete(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['outfitHistory'] });
+    },
+  });
+
+  const toggleFavoriteMutation = useMutation({
+    mutationFn: ({ id, isFavorite }) => 
+      base44.entities.OutfitHistory.update(id, { is_favorite: !isFavorite }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['outfitHistory'] });
+    },
+  });
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (editingOutfit) {
+      updateMutation.mutate({ id: editingOutfit.id, data: formData });
+    } else {
+      createMutation.mutate(formData);
+    }
+  };
+
+  const handleEdit = (outfit) => {
+    setEditingOutfit(outfit);
+    setFormData({
+      occasion_type: outfit.occasion_type,
+      occasion_name: outfit.occasion_name || "",
+      occasion_date: outfit.occasion_date,
+      outfit_description: outfit.outfit_description || "",
+      total_spent: outfit.total_spent || 0,
+      rating: outfit.rating || 5,
+      notes: outfit.notes || ""
+    });
+    setShowAddDialog(true);
+  };
+
+  const resetForm = () => {
+    setFormData({
+      occasion_type: "",
+      occasion_name: "",
+      occasion_date: "",
+      outfit_description: "",
+      total_spent: 0,
+      rating: 5,
+      notes: ""
+    });
+    setEditingOutfit(null);
+  };
+
+  const occasions = [
+    { value: "wedding", label: "Wedding" },
+    { value: "job_interview", label: "Job Interview" },
+    { value: "date", label: "Date" },
+    { value: "party", label: "Party" },
+    { value: "casual_hangout", label: "Casual Hangout" },
+    { value: "business_meeting", label: "Business Meeting" },
+    { value: "dinner", label: "Dinner" },
+    { value: "brunch", label: "Brunch" },
+    { value: "concert", label: "Concert" },
+    { value: "beach", label: "Beach" },
+    { value: "gym", label: "Gym" },
+    { value: "formal_event", label: "Formal Event" },
+    { value: "other", label: "Other" }
+  ];
+
+  const totalSpent = outfitHistory.reduce((sum, outfit) => sum + (outfit.total_spent || 0), 0);
+  const avgRating = outfitHistory.length > 0
+    ? outfitHistory.reduce((sum, outfit) => sum + (outfit.rating || 0), 0) / outfitHistory.length
+    : 0;
+
+  if (!user) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-pink-500" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="p-4 md:p-8 max-w-6xl mx-auto">
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="mb-8"
+      >
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-400 to-cyan-400 flex items-center justify-center">
+              <History className="w-6 h-6 text-white" />
+            </div>
+            <div>
+              <h1 className="text-3xl font-bold text-gray-900">Outfit History</h1>
+              <p className="text-gray-600">{outfitHistory.length} outfits tracked</p>
+            </div>
+          </div>
+          <Button
+            onClick={() => {
+              resetForm();
+              setShowAddDialog(true);
+            }}
+            className="bg-gradient-to-r from-blue-500 to-cyan-500 hover:from-blue-600 hover:to-cyan-600 text-white"
+          >
+            <Plus className="w-4 h-4 mr-2" />
+            Add Outfit
+          </Button>
+        </div>
+      </motion.div>
+
+      {/* Stats */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.1 }}
+        >
+          <Card>
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-gray-500 mb-1">Total Outfits</p>
+                  <p className="text-3xl font-bold text-gray-900">
+                    {outfitHistory.length}
+                  </p>
+                </div>
+                <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-100 to-blue-200 flex items-center justify-center">
+                  <History className="w-6 h-6 text-blue-600" />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </motion.div>
+
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.2 }}
+        >
+          <Card>
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-gray-500 mb-1">Total Invested</p>
+                  <p className="text-3xl font-bold text-gray-900">
+                    ${totalSpent.toFixed(0)}
+                  </p>
+                </div>
+                <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-green-100 to-green-200 flex items-center justify-center">
+                  <DollarSign className="w-6 h-6 text-green-600" />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </motion.div>
+
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.3 }}
+        >
+          <Card>
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-gray-500 mb-1">Avg Rating</p>
+                  <div className="flex items-center gap-2">
+                    <p className="text-3xl font-bold text-gray-900">
+                      {avgRating.toFixed(1)}
+                    </p>
+                    <Star className="w-6 h-6 text-yellow-500 fill-yellow-500" />
+                  </div>
+                </div>
+                <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-yellow-100 to-yellow-200 flex items-center justify-center">
+                  <Star className="w-6 h-6 text-yellow-600" />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </motion.div>
+      </div>
+
+      {/* History Timeline */}
+      <AnimatePresence mode="wait">
+        {isLoading ? (
+          <div className="space-y-4">
+            {[...Array(4)].map((_, i) => (
+              <Card key={i}>
+                <CardContent className="p-6">
+                  <Skeleton className="h-6 w-48 mb-2" />
+                  <Skeleton className="h-4 w-32 mb-4" />
+                  <Skeleton className="h-16 w-full" />
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        ) : outfitHistory.length === 0 ? (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="text-center py-16"
+          >
+            <div className="w-20 h-20 rounded-full bg-gradient-to-br from-blue-100 to-cyan-100 flex items-center justify-center mx-auto mb-4">
+              <History className="w-10 h-10 text-blue-500" />
+            </div>
+            <h3 className="text-xl font-semibold text-gray-900 mb-2">
+              No outfit history yet
+            </h3>
+            <p className="text-gray-600 mb-6">
+              Start tracking your outfits to see patterns and avoid repeating the same looks
+            </p>
+            <Button
+              onClick={() => {
+                resetForm();
+                setShowAddDialog(true);
+              }}
+              className="bg-gradient-to-r from-blue-500 to-cyan-500"
+            >
+              <Plus className="w-4 h-4 mr-2" />
+              Add Your First Outfit
+            </Button>
+          </motion.div>
+        ) : (
+          <div className="space-y-4">
+            {outfitHistory.map((outfit, index) => (
+              <motion.div
+                key={outfit.id}
+                initial={{ opacity: 0, x: -20 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: index * 0.05 }}
+              >
+                <Card className="hover:shadow-lg transition-shadow duration-300">
+                  <CardHeader>
+                    <div className="flex justify-between items-start">
+                      <div className="flex-1">
+                        <CardTitle className="flex items-center gap-2 mb-2">
+                          <Calendar className="w-5 h-5 text-blue-500" />
+                          {outfit.occasion_name || occasions.find(o => o.value === outfit.occasion_type)?.label}
+                        </CardTitle>
+                        <p className="text-sm text-gray-500">
+                          {format(new Date(outfit.occasion_date), "MMMM d, yyyy")}
+                        </p>
+                      </div>
+                      <div className="flex gap-1">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => toggleFavoriteMutation.mutate({ 
+                            id: outfit.id, 
+                            isFavorite: outfit.is_favorite 
+                          })}
+                          className={outfit.is_favorite ? "text-red-500" : ""}
+                        >
+                          <Heart className={`w-4 h-4 ${outfit.is_favorite ? 'fill-red-500' : ''}`} />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => handleEdit(outfit)}
+                        >
+                          <Edit className="w-4 h-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="text-red-500 hover:text-red-600"
+                          onClick={() => deleteMutation.mutate(outfit.id)}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-3">
+                      {outfit.outfit_description && (
+                        <p className="text-gray-700">{outfit.outfit_description}</p>
+                      )}
+
+                      <div className="flex flex-wrap gap-2">
+                        <Badge variant="outline">
+                          {occasions.find(o => o.value === outfit.occasion_type)?.label}
+                        </Badge>
+                        {outfit.total_spent > 0 && (
+                          <Badge className="bg-green-100 text-green-700 border-green-200">
+                            <DollarSign className="w-3 h-3 mr-1" />
+                            ${outfit.total_spent.toFixed(2)} spent
+                          </Badge>
+                        )}
+                        {outfit.rating && (
+                          <Badge className="bg-yellow-100 text-yellow-700 border-yellow-200">
+                            <Star className="w-3 h-3 mr-1 fill-yellow-500" />
+                            {outfit.rating}/5
+                          </Badge>
+                        )}
+                      </div>
+
+                      {outfit.notes && (
+                        <div className="bg-gray-50 rounded-lg p-3 text-sm text-gray-600">
+                          <strong>Notes:</strong> {outfit.notes}
+                        </div>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              </motion.div>
+            ))}
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Add/Edit Dialog */}
+      <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>
+              {editingOutfit ? "Edit Outfit" : "Add Outfit to History"}
+            </DialogTitle>
+          </DialogHeader>
+
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="grid md:grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="occasion_type">Occasion Type *</Label>
+                <Select
+                  value={formData.occasion_type}
+                  onValueChange={(value) => setFormData({ ...formData, occasion_type: value })}
+                  required
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select occasion" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {occasions.map(occ => (
+                      <SelectItem key={occ.value} value={occ.value}>
+                        {occ.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div>
+                <Label htmlFor="occasion_date">Date *</Label>
+                <Input
+                  id="occasion_date"
+                  type="date"
+                  value={formData.occasion_date}
+                  onChange={(e) => setFormData({ ...formData, occasion_date: e.target.value })}
+                  required
+                />
+              </div>
+            </div>
+
+            <div>
+              <Label htmlFor="occasion_name">Occasion Name</Label>
+              <Input
+                id="occasion_name"
+                value={formData.occasion_name}
+                onChange={(e) => setFormData({ ...formData, occasion_name: e.target.value })}
+                placeholder="e.g., Sarah's Wedding, Tech Conference"
+              />
+            </div>
+
+            <div>
+              <Label htmlFor="outfit_description">Outfit Description</Label>
+              <Textarea
+                id="outfit_description"
+                value={formData.outfit_description}
+                onChange={(e) => setFormData({ ...formData, outfit_description: e.target.value })}
+                placeholder="Describe what you wore..."
+                rows={3}
+              />
+            </div>
+
+            <div className="grid md:grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="total_spent">Amount Spent ($)</Label>
+                <Input
+                  id="total_spent"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={formData.total_spent}
+                  onChange={(e) => setFormData({ ...formData, total_spent: parseFloat(e.target.value) || 0 })}
+                />
+              </div>
+
+              <div>
+                <Label htmlFor="rating">Rating (1-5)</Label>
+                <Select
+                  value={formData.rating?.toString()}
+                  onValueChange={(value) => setFormData({ ...formData, rating: parseInt(value) })}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {[1, 2, 3, 4, 5].map(num => (
+                      <SelectItem key={num} value={num.toString()}>
+                        {num} {num === 1 ? 'Star' : 'Stars'}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div>
+              <Label htmlFor="notes">Additional Notes</Label>
+              <Textarea
+                id="notes"
+                value={formData.notes}
+                onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+                placeholder="Any additional thoughts..."
+                rows={2}
+              />
+            </div>
+
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setShowAddDialog(false);
+                  resetForm();
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                disabled={createMutation.isPending || updateMutation.isPending}
+                className="bg-gradient-to-r from-blue-500 to-cyan-500"
+              >
+                {createMutation.isPending || updateMutation.isPending
+                  ? "Saving..."
+                  : editingOutfit
+                  ? "Update Outfit"
+                  : "Add Outfit"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}

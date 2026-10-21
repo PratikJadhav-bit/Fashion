@@ -1,0 +1,74 @@
+import React from "react";
+
+const CART_STORAGE_KEY = "fashion_app_cart";
+
+export function useCart() {
+  const [cart, setCart] = React.useState([]);
+
+  // Load cart from localStorage on mount
+  React.useEffect(() => {
+    const stored = localStorage.getItem(CART_STORAGE_KEY);
+    if (stored) {
+      try {
+        setCart(JSON.parse(stored));
+      } catch (error) {
+        console.error("Error loading cart:", error);
+      }
+    }
+  }, []);
+
+  // Save cart to localStorage whenever it changes
+  React.useEffect(() => {
+    localStorage.setItem(CART_STORAGE_KEY, JSON.stringify(cart));
+  }, [cart]);
+
+  const addToCart = (item) => {
+    setCart(prev => {
+      const existing = prev.find(i => i.id === item.id && i.selectedSize === item.selectedSize && i.selectedMaterial === item.selectedMaterial);
+      if (existing) {
+        return prev.map(i =>
+          i.id === item.id && i.selectedSize === item.selectedSize && i.selectedMaterial === item.selectedMaterial
+            ? { ...i, quantity: i.quantity + (item.quantity || 1) }
+            : i
+        );
+      }
+      return [...prev, { ...item, quantity: item.quantity || 1 }];
+    });
+  };
+
+  const removeFromCart = (itemId) => {
+    setCart(prev => prev.filter(i => i.id !== itemId));
+  };
+
+  const updateQuantity = (itemId, quantity) => {
+    if (quantity <= 0) {
+      removeFromCart(itemId);
+      return;
+    }
+    setCart(prev => prev.map(i => i.id === itemId ? { ...i, quantity } : i));
+  };
+
+  const clearCart = () => {
+    setCart([]);
+    localStorage.removeItem(CART_STORAGE_KEY);
+  };
+
+  const getCartTotal = () => {
+    return cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+  };
+
+  const getCartCount = () => {
+    return cart.reduce((sum, item) => sum + item.quantity, 0);
+  };
+
+  return {
+    cart,
+    addToCart,
+    removeFromCart,
+    updateQuantity,
+    clearCart,
+    getCartTotal,
+    getCartCount
+  };
+}
+

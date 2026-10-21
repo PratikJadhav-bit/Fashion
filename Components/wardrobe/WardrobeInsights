@@ -1,0 +1,373 @@
+import React from "react";
+import { useQuery } from "@tanstack/react-query";
+import { base44 } from "@/api/base44Client";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { motion } from "framer-motion";
+import {
+  TrendingUp,
+  Palette,
+  Sparkles,
+  ShoppingBag,
+  Loader2,
+  PieChart
+} from "lucide-react";
+
+export default function WardrobeInsights({ userEmail }) {
+  const [insights, setInsights] = React.useState(null);
+  const [isAnalyzing, setIsAnalyzing] = React.useState(false);
+
+  const { data: wardrobeItems = [] } = useQuery({
+    queryKey: ['wardrobe', userEmail],
+    queryFn: () => base44.entities.WardrobeItem.filter({ user_email: userEmail }),
+    enabled: !!userEmail,
+    initialData: [],
+  });
+
+  const { data: affiliateProducts = [] } = useQuery({
+    queryKey: ['affiliateProducts'],
+    queryFn: () => base44.entities.AffiliateProduct.filter({ is_active: true }),
+    initialData: [],
+  });
+
+  React.useEffect(() => {
+    if (wardrobeItems.length > 0 && !insights) {
+      analyzeWardrobe();
+    }
+  }, [wardrobeItems]);
+
+  const analyzeWardrobe = async () => {
+    if (wardrobeItems.length === 0) return;
+
+    setIsAnalyzing(true);
+    try {
+      // Calculate basic stats
+      const colorFrequency = {};
+      const categoryFrequency = {};
+      const styleFrequency = {};
+
+      wardrobeItems.forEach(item => {
+        // Count categories
+        categoryFrequency[item.category] = (categoryFrequency[item.category] || 0) + 1;
+
+        // Count colors
+        item.colors?.forEach(color => {
+          colorFrequency[color.toLowerCase()] = (colorFrequency[color.toLowerCase()] || 0) + 1;
+        });
+
+        // Count style tags
+        item.style_tags?.forEach(style => {
+          styleFrequency[style.toLowerCase()] = (styleFrequency[style.toLowerCase()] || 0) + 1;
+        });
+      });
+
+      const topColors = Object.entries(colorFrequency)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 5);
+
+      const topCategories = Object.entries(categoryFrequency)
+        .sort((a, b) => b[1] - a[1]);
+
+      const wardrobeData = {
+        items: wardrobeItems.map(item => ({
+          name: item.item_name,
+          category: item.category,
+          colors: item.colors,
+          style_tags: item.style_tags
+        })),
+        color_stats: topColors,
+        category_stats: topCategories
+      };
+
+      const prompt = `Analyze this wardrobe and provide personalized insights:
+
+Wardrobe Data:
+${JSON.stringify(wardrobeData)}
+
+Provide:
+1. **Style Analysis**: What's their dominant style? (2-3 sentences)
+2. **Color Palette Insights**: Commentary on their color choices
+3. **Wardrobe Gaps**: What key items are missing for a complete wardrobe? (List 4-5 specific items)
+4. **Style Compatibility**: Suggest 3-4 outfit combinations from their existing items
+5. **Recommendations**: Specific items they should add to complement their style
+
+Format as JSON with clear sections.`;
+
+      const result = await base44.integrations.Core.InvokeLLM({
+        prompt: prompt,
+        add_context_from_internet: false,
+        response_json_schema: {
+          type: "object",
+          properties: {
+            style_analysis: { type: "string" },
+            color_insights: { type: "string" },
+            wardrobe_gaps: { type: "array", items: { type: "string" } },
+            outfit_combinations: { type: "array", items: { type: "string" } },
+            recommendations: { type: "array", items: { type: "string" } }
+          }
+        }
+      });
+
+      // Find matching affiliate products for gaps
+      const gapProducts = affiliateProducts.filter(product => {
+        return result.wardrobe_gaps?.some(gap => 
+          gap.toLowerCase().includes(product.category) ||
+          product.product_name.toLowerCase().includes(gap.toLowerCase().split(' ')[0])
+        );
+      }).slice(0, 6);
+
+      setInsights({
+        ...result,
+        topColors,
+        topCategories,
+        totalItems: wardrobeItems.length,
+        gapProducts
+      });
+    } catch (error) {
+      console.error("Error analyzing wardrobe:", error);
+    }
+    setIsAnalyzing(false);
+  };
+
+  if (wardrobeItems.length === 0) {
+    return (
+      <div className="text-center py-16">
+        <ShoppingBag className="w-16 h-16 mx-auto mb-4 text-gray-300" />
+        <p className="text-gray-600">
+          Add items to your wardrobe to see AI-powered insights
+        </p>
+      </div>
+    );
+  }
+
+  if (isAnalyzing) {
+    return (
+      <div className="flex flex-col items-center justify-center py-16">
+        <Loader2 className="w-12 h-12 animate-spin text-purple-500 mb-4" />
+        <p className="text-gray-600">Analyzing your wardrobe...</p>
+      </div>
+    );
+  }
+
+  if (!insights) {
+    return (
+      <div className="text-center py-16">
+        <Sparkles className="w-16 h-16 mx-auto mb-4 text-gray-300" />
+        <p className="text-gray-600 mb-4">Ready to analyze your wardrobe?</p>
+        <Button onClick={analyzeWardrobe} className="bg-gradient-to-r from-purple-500 to-pink-500">
+          <Sparkles className="w-4 h-4 mr-2" />
+          Generate Insights
+        </Button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Quick Stats */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <Card>
+          <CardContent className="p-4 text-center">
+            <p className="text-2xl font-bold text-purple-600">{insights.totalItems}</p>
+            <p className="text-sm text-gray-600">Total Items</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4 text-center">
+            <p className="text-2xl font-bold text-blue-600">{insights.topCategories?.length || 0}</p>
+            <p className="text-sm text-gray-600">Categories</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4 text-center">
+            <p className="text-2xl font-bold text-pink-600">{insights.topColors?.length || 0}</p>
+            <p className="text-sm text-gray-600">Main Colors</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4 text-center">
+            <p className="text-2xl font-bold text-green-600">{insights.outfit_combinations?.length || 0}</p>
+            <p className="text-sm text-gray-600">Outfit Ideas</p>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Top Colors */}
+      {insights.topColors?.length > 0 && (
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Palette className="w-5 h-5 text-purple-500" />
+                Your Color Palette
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="flex flex-wrap gap-3 mb-4">
+                {insights.topColors.map(([color, count]) => (
+                  <div key={color} className="flex items-center gap-2">
+                    <div 
+                      className="w-8 h-8 rounded-full border-2 border-white shadow-md"
+                      style={{ backgroundColor: color }}
+                    />
+                    <span className="text-sm text-gray-700 capitalize">
+                      {color} ({count})
+                    </span>
+                  </div>
+                ))}
+              </div>
+              {insights.color_insights && (
+                <p className="text-sm text-gray-600 bg-purple-50 rounded-lg p-3">
+                  {insights.color_insights}
+                </p>
+              )}
+            </CardContent>
+          </Card>
+        </motion.div>
+      )}
+
+      {/* Top Categories */}
+      {insights.topCategories?.length > 0 && (
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}>
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <PieChart className="w-5 h-5 text-blue-500" />
+                Category Breakdown
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-2">
+                {insights.topCategories.map(([category, count]) => {
+                  const percentage = (count / insights.totalItems) * 100;
+                  return (
+                    <div key={category}>
+                      <div className="flex justify-between text-sm mb-1">
+                        <span className="capitalize font-medium">{category}</span>
+                        <span className="text-gray-600">{count} items ({percentage.toFixed(0)}%)</span>
+                      </div>
+                      <div className="w-full bg-gray-200 rounded-full h-2">
+                        <div 
+                          className="bg-gradient-to-r from-blue-500 to-purple-500 h-2 rounded-full"
+                          style={{ width: `${percentage}%` }}
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </CardContent>
+          </Card>
+        </motion.div>
+      )}
+
+      {/* Style Analysis */}
+      {insights.style_analysis && (
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}>
+          <Card className="bg-gradient-to-r from-purple-50 to-pink-50 border-purple-200">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Sparkles className="w-5 h-5 text-purple-600" />
+                Your Style Profile
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-gray-700">{insights.style_analysis}</p>
+            </CardContent>
+          </Card>
+        </motion.div>
+      )}
+
+      {/* Outfit Combinations */}
+      {insights.outfit_combinations?.length > 0 && (
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}>
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <TrendingUp className="w-5 h-5 text-green-500" />
+                Suggested Outfit Combinations
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-2">
+                {insights.outfit_combinations.map((combo, i) => (
+                  <div key={i} className="bg-green-50 rounded-lg p-3 text-sm text-gray-700">
+                    <span className="font-medium text-green-700">Outfit {i + 1}:</span> {combo}
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        </motion.div>
+      )}
+
+      {/* Wardrobe Gaps */}
+      {insights.wardrobe_gaps?.length > 0 && (
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4 }}>
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <ShoppingBag className="w-5 h-5 text-orange-500" />
+                Missing Wardrobe Essentials
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-2 mb-4">
+                {insights.wardrobe_gaps.map((gap, i) => (
+                  <div key={i} className="flex items-center gap-2 text-sm text-gray-700">
+                    <div className="w-2 h-2 rounded-full bg-orange-500" />
+                    {gap}
+                  </div>
+                ))}
+              </div>
+
+              {/* Gap Products */}
+              {insights.gapProducts?.length > 0 && (
+                <div>
+                  <h4 className="font-medium text-sm mb-3 text-gray-700">Recommended Products</h4>
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                    {insights.gapProducts.map((product) => (
+                      <a
+                        key={product.id}
+                        href={product.product_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="block group"
+                      >
+                        <Card className="hover:shadow-md transition-shadow">
+                          {product.image_url && (
+                            <div className="aspect-square bg-gray-100 overflow-hidden">
+                              <img
+                                src={product.image_url}
+                                alt={product.product_name}
+                                className="w-full h-full object-cover group-hover:scale-110 transition-transform"
+                              />
+                            </div>
+                          )}
+                          <CardContent className="p-2">
+                            <p className="text-xs font-medium text-gray-900 line-clamp-2">
+                              {product.product_name}
+                            </p>
+                            <Badge className="mt-1 bg-green-500 text-xs">₹{product.price}</Badge>
+                          </CardContent>
+                        </Card>
+                      </a>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </motion.div>
+      )}
+
+      <div className="text-center">
+        <Button onClick={analyzeWardrobe} variant="outline">
+          <Sparkles className="w-4 h-4 mr-2" />
+          Refresh Analysis
+        </Button>
+      </div>
+    </div>
+  );
+}

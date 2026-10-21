@@ -1,0 +1,300 @@
+import React from "react";
+import { base44 } from "@/api/base44Client";
+import { createPageUrl } from "@/utils";
+import { useQuery } from "@tanstack/react-query";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { motion } from "framer-motion";
+import {
+  Cloud,
+  Sun,
+  CloudRain,
+  Snowflake,
+  Wind,
+  Sparkles,
+  MapPin,
+  Loader2
+} from "lucide-react";
+import { Skeleton } from "@/components/ui/skeleton";
+
+export default function WeatherOutfits() {
+  const [user, setUser] = React.useState(null);
+  const [location, setLocation] = React.useState("");
+  const [weatherData, setWeatherData] = React.useState(null);
+  const [outfitSuggestion, setOutfitSuggestion] = React.useState(null);
+  const [isLoadingWeather, setIsLoadingWeather] = React.useState(false);
+  const [isLoadingSuggestion, setIsLoadingSuggestion] = React.useState(false);
+
+  React.useEffect(() => {
+    const loadUser = async () => {
+      try {
+        const currentUser = await base44.auth.me();
+        setUser(currentUser);
+      } catch (error) {
+        base44.auth.redirectToLogin(createPageUrl("WeatherOutfits"));
+      }
+    };
+    loadUser();
+  }, []);
+
+  const { data: userProfile } = useQuery({
+    queryKey: ['userProfile', user?.email],
+    queryFn: async () => {
+      if (!user?.email) return null;
+      const profiles = await base44.entities.UserProfile.filter({ user_email: user.email });
+      return profiles[0] || null;
+    },
+    enabled: !!user?.email,
+  });
+
+  const { data: wardrobeItems = [] } = useQuery({
+    queryKey: ['wardrobe', user?.email],
+    queryFn: () => base44.entities.WardrobeItem.filter({ user_email: user.email }),
+    enabled: !!user?.email,
+    initialData: [],
+  });
+
+  const getWeatherAndOutfit = async () => {
+    if (!location.trim()) return;
+
+    setIsLoadingWeather(true);
+    setWeatherData(null);
+    setOutfitSuggestion(null);
+
+    try {
+      // Get weather data
+      const weatherPrompt = `Get current weather information for ${location}. 
+      Include temperature, conditions (sunny, rainy, cloudy, snowy, windy, etc.), and any weather alerts.
+      Format as a brief, natural description.`;
+
+      const weather = await base44.integrations.Core.InvokeLLM({
+        prompt: weatherPrompt,
+        add_context_from_internet: true
+      });
+
+      setWeatherData(weather);
+      setIsLoadingWeather(false);
+
+      // Generate outfit suggestion based on weather
+      setIsLoadingSuggestion(true);
+
+      const profileInfo = userProfile ? `
+User Profile:
+- Gender: ${userProfile.gender}
+- Body Type: ${userProfile.body_type}
+- Style Preferences: ${userProfile.style_preferences?.join(', ')}
+- Comfort Priority: ${userProfile.comfort_priority}
+      ` : "";
+
+      const wardrobeInfo = wardrobeItems.length > 0 
+        ? `\n\nUser's Wardrobe:\n${wardrobeItems.slice(0, 15).map(item => 
+            `- ${item.item_name} (${item.category}, ${item.colors?.join('/')})`
+          ).join('\n')}`
+        : "";
+
+      const outfitPrompt = `You are a fashion stylist. Based on this weather forecast:
+
+${weather}
+
+${profileInfo}
+${wardrobeInfo}
+
+Suggest a complete outfit that is:
+1. Weather-appropriate and practical
+2. Stylish and put-together
+3. Uses items from their wardrobe when possible
+4. Includes layering suggestions if needed
+5. Mentions specific colors and styles
+
+Be specific, friendly, and practical. Include outfit breakdown (top, bottom, shoes, accessories, outerwear if needed).`;
+
+      const suggestion = await base44.integrations.Core.InvokeLLM({
+        prompt: outfitPrompt,
+        add_context_from_internet: false
+      });
+
+      setOutfitSuggestion(suggestion);
+    } catch (error) {
+      console.error("Error:", error);
+    }
+
+    setIsLoadingSuggestion(false);
+  };
+
+  const getWeatherIcon = (weather) => {
+    const weatherLower = weather?.toLowerCase() || "";
+    if (weatherLower.includes("rain")) return <CloudRain className="w-8 h-8" />;
+    if (weatherLower.includes("snow")) return <Snowflake className="w-8 h-8" />;
+    if (weatherLower.includes("wind")) return <Wind className="w-8 h-8" />;
+    if (weatherLower.includes("cloud")) return <Cloud className="w-8 h-8" />;
+    return <Sun className="w-8 h-8" />;
+  };
+
+  if (!user) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-pink-500" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="p-4 md:p-8 max-w-5xl mx-auto">
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="mb-8"
+      >
+        <div className="flex items-center gap-3 mb-2">
+          <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-400 to-cyan-400 flex items-center justify-center">
+            <Cloud className="w-6 h-6 text-white" />
+          </div>
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900">Weather-Based Outfits</h1>
+            <p className="text-gray-600">Dress perfectly for any weather</p>
+          </div>
+        </div>
+      </motion.div>
+
+      {/* Location Input */}
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.1 }}
+      >
+        <Card className="mb-6">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <MapPin className="w-5 h-5 text-blue-500" />
+              Where are you?
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="flex gap-3">
+              <div className="flex-1">
+                <Input
+                  placeholder="Enter city or location (e.g., New York, London, Tokyo)"
+                  value={location}
+                  onChange={(e) => setLocation(e.target.value)}
+                  onKeyPress={(e) => {
+                    if (e.key === "Enter") {
+                      getWeatherAndOutfit();
+                    }
+                  }}
+                  className="text-lg"
+                />
+              </div>
+              <Button
+                onClick={getWeatherAndOutfit}
+                disabled={!location.trim() || isLoadingWeather}
+                className="bg-gradient-to-r from-blue-500 to-cyan-500 hover:from-blue-600 hover:to-cyan-600 px-8"
+              >
+                {isLoadingWeather ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Loading...
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="w-4 h-4 mr-2" />
+                    Get Outfit
+                  </>
+                )}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </motion.div>
+
+      {/* Weather & Outfit Display */}
+      <div className="grid lg:grid-cols-2 gap-6">
+        {/* Weather Card */}
+        {weatherData && (
+          <motion.div
+            initial={{ opacity: 0, x: -20 }}
+            animate={{ opacity: 1, x: 0 }}
+          >
+            <Card className="h-full">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Cloud className="w-5 h-5 text-blue-500" />
+                  Current Weather
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="flex items-center gap-4 mb-4">
+                  <div className="w-16 h-16 rounded-full bg-gradient-to-br from-blue-100 to-cyan-100 flex items-center justify-center text-blue-600">
+                    {getWeatherIcon(weatherData)}
+                  </div>
+                  <div className="flex-1">
+                    <h3 className="text-2xl font-bold text-gray-900 mb-1 capitalize">
+                      {location}
+                    </h3>
+                  </div>
+                </div>
+                <div className="bg-blue-50 rounded-lg p-4 text-gray-700 leading-relaxed">
+                  {weatherData}
+                </div>
+              </CardContent>
+            </Card>
+          </motion.div>
+        )}
+
+        {/* Outfit Suggestion Card */}
+        {(isLoadingSuggestion || outfitSuggestion) && (
+          <motion.div
+            initial={{ opacity: 0, x: 20 }}
+            animate={{ opacity: 1, x: 0 }}
+          >
+            <Card className="h-full">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Sparkles className="w-5 h-5 text-purple-500" />
+                  Perfect Outfit for Today
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {isLoadingSuggestion ? (
+                  <div className="space-y-3">
+                    <Skeleton className="h-4 w-full" />
+                    <Skeleton className="h-4 w-5/6" />
+                    <Skeleton className="h-4 w-4/6" />
+                    <Skeleton className="h-32 w-full rounded-lg mt-4" />
+                    <Skeleton className="h-4 w-full" />
+                    <Skeleton className="h-4 w-3/4" />
+                  </div>
+                ) : (
+                  <div className="bg-gradient-to-r from-purple-50 to-pink-50 rounded-lg p-4 text-gray-700 leading-relaxed whitespace-pre-wrap">
+                    {outfitSuggestion}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </motion.div>
+        )}
+      </div>
+
+      {/* Empty State */}
+      {!weatherData && !isLoadingWeather && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 0.2 }}
+          className="text-center py-16"
+        >
+          <div className="w-20 h-20 rounded-full bg-gradient-to-br from-blue-100 to-cyan-100 flex items-center justify-center mx-auto mb-4">
+            <Cloud className="w-10 h-10 text-blue-500" />
+          </div>
+          <h3 className="text-xl font-semibold text-gray-900 mb-2">
+            Ready to dress for the weather?
+          </h3>
+          <p className="text-gray-600 max-w-md mx-auto">
+            Enter your location above to get real-time weather updates and personalized outfit recommendations
+          </p>
+        </motion.div>
+      )}
+    </div>
+  );
+}

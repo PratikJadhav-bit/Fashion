@@ -1,0 +1,34 @@
+{
+  "name": "Wishlist",
+  "type": "object",
+  "properties": {
+    "user_email": {
+      "type": "string",
+      "description": "Email of the user"
+    },
+    "product_id": {
+      "type": "string",
+      "description": "ID of the affiliate product"
+    },
+    "product_name": {
+      "type": "string",
+      "description": "Name of the product"
+    },
+    "product_url": {
+      "type": "string",
+      "description": "Product URL"
+    },
+    "image_url": {
+      "type": "string",
+      "description": "Product image URL"
+    },
+    "price": {
+      "type": "number",
+      "description": "Product price"
+    }
+  },
+  "required": [
+    "user_email",
+    "product_id"
+  ]
+}

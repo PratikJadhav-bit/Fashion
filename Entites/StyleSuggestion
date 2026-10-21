@@ -1,0 +1,44 @@
+{
+  "name": "StyleSuggestion",
+  "type": "object",
+  "properties": {
+    "user_email": {
+      "type": "string",
+      "description": "Email of the user"
+    },
+    "occasion_type": {
+      "type": "string",
+      "description": "Type of occasion"
+    },
+    "suggestion_data": {
+      "type": "object",
+      "description": "AI-generated outfit suggestions"
+    },
+    "from_wardrobe": {
+      "type": "boolean",
+      "default": false,
+      "description": "Whether this uses items from user's wardrobe"
+    },
+    "items_to_purchase": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      },
+      "description": "Items that need to be purchased"
+    },
+    "estimated_cost": {
+      "type": "number",
+      "description": "Estimated cost for new items"
+    },
+    "saved": {
+      "type": "boolean",
+      "default": false,
+      "description": "Whether user saved this suggestion"
+    }
+  },
+  "required": [
+    "user_email",
+    "occasion_type"
+  ]
+}
+

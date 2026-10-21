@@ -1,0 +1,134 @@
+{
+  "name": "AffiliateProduct",
+  "type": "object",
+  "properties": {
+    "product_name": {
+      "type": "string",
+      "description": "Name of the product"
+    },
+    "product_url": {
+      "type": "string",
+      "description": "Affiliate link URL"
+    },
+    "image_url": {
+      "type": "string",
+      "description": "Product image URL"
+    },
+    "category": {
+      "type": "string",
+      "enum": [
+        "tops",
+        "bottoms",
+        "dresses",
+        "outerwear",
+        "shoes",
+        "accessories",
+        "activewear",
+        "formal",
+        "watches",
+        "bracelets",
+        "rings",
+        "necklaces",
+        "bags",
+        "eyewear",
+        "belts",
+        "hats",
+        "perfumes"
+      ],
+      "description": "Product category"
+    },
+    "occasion_type": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "wedding",
+          "job_interview",
+          "date",
+          "party",
+          "casual_hangout",
+          "business_meeting",
+          "dinner",
+          "brunch",
+          "concert",
+          "beach",
+          "gym",
+          "formal_event",
+          "other"
+        ]
+      },
+      "description": "Suitable occasions for this product"
+    },
+    "style_tags": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Style tags (casual, formal, bohemian, etc.)"
+    },
+    "color": {
+      "type": "string",
+      "description": "Product color"
+    },
+    "price": {
+      "type": "number",
+      "description": "Product price"
+    },
+    "price_range": {
+      "type": "string",
+      "enum": [
+        "budget_friendly",
+        "moderate",
+        "luxury"
+      ],
+      "description": "Price range category"
+    },
+    "source_platform": {
+      "type": "string",
+      "enum": [
+        "Amazon",
+        "Flipkart",
+        "Meesho",
+        "Other"
+      ],
+      "description": "Shopping platform"
+    },
+    "gender": {
+      "type": "string",
+      "enum": [
+        "male",
+        "female",
+        "unisex"
+      ],
+      "description": "Target gender"
+    },
+    "season": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "spring",
+          "summer",
+          "fall",
+          "winter",
+          "all_season"
+        ]
+      },
+      "description": "Suitable seasons"
+    },
+    "is_active": {
+      "type": "boolean",
+      "default": true,
+      "description": "Whether product is active"
+    },
+    "affiliate_homepage_url": {
+      "type": "string",
+      "description": "Original affiliate homepage URL this product was extracted from"
+    }
+  },
+  "required": [
+    "product_name",
+    "product_url",
+    "category"
+  ]
+}

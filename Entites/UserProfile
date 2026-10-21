@@ -1,0 +1,166 @@
+{
+  "name": "UserProfile",
+  "type": "object",
+  "properties": {
+    "user_email": {
+      "type": "string",
+      "description": "Email of the user this profile belongs to"
+    },
+    "full_name": {
+      "type": "string",
+      "description": "User's full name"
+    },
+    "gender": {
+      "type": "string",
+      "enum": [
+        "male",
+        "female",
+        "non-binary",
+        "prefer_not_to_say"
+      ],
+      "description": "User's gender identity"
+    },
+    "body_type": {
+      "type": "string",
+      "enum": [
+        "petite",
+        "athletic",
+        "curvy",
+        "plus_size",
+        "tall",
+        "slim"
+      ],
+      "description": "User's body type"
+    },
+    "skin_tone": {
+      "type": "string",
+      "enum": [
+        "fair",
+        "light",
+        "medium",
+        "olive",
+        "tan",
+        "deep"
+      ],
+      "description": "User's skin tone"
+    },
+    "favorite_colors": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "User's favorite colors for clothing"
+    },
+    "style_preferences": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "casual",
+          "formal",
+          "bohemian",
+          "minimalist",
+          "vintage",
+          "sporty",
+          "elegant",
+          "edgy",
+          "romantic",
+          "glam",
+          "classic",
+          "creative"
+        ]
+      },
+      "description": "User's preferred fashion styles"
+    },
+    "comfort_priority": {
+      "type": "string",
+      "enum": [
+        "high",
+        "medium",
+        "low"
+      ],
+      "default": "medium",
+      "description": "How much user prioritizes comfort"
+    },
+    "budget_range": {
+      "type": "string",
+      "enum": [
+        "budget_friendly",
+        "moderate",
+        "luxury",
+        "mixed"
+      ],
+      "description": "User's typical shopping budget"
+    },
+    "preferred_brands": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "User's favorite clothing brands"
+    },
+    "occasion_preferences": {
+      "type": "object",
+      "properties": {
+        "work": {
+          "type": "string",
+          "description": "Work outfit preferences"
+        },
+        "casual": {
+          "type": "string",
+          "description": "Casual outfit preferences"
+        },
+        "party": {
+          "type": "string",
+          "description": "Party outfit preferences"
+        },
+        "formal": {
+          "type": "string",
+          "description": "Formal event preferences"
+        },
+        "date": {
+          "type": "string",
+          "description": "Date night preferences"
+        }
+      },
+      "description": "Occasion-specific styling preferences"
+    },
+    "avoid_styles": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Styles or items the user wants to avoid"
+    },
+    "sizes": {
+      "type": "object",
+      "properties": {
+        "top": {
+          "type": "string"
+        },
+        "bottom": {
+          "type": "string"
+        },
+        "dress": {
+          "type": "string"
+        },
+        "shoe": {
+          "type": "string"
+        }
+      },
+      "description": "User's clothing sizes"
+    },
+    "profile_completed": {
+      "type": "boolean",
+      "default": false,
+      "description": "Whether user has completed their style profile"
+    },
+    "style_dna": {
+      "type": "object",
+      "description": "Style DNA quiz results with percentages and top styles"
+    }
+  },
+  "required": [
+    "user_email"
+  ]
+}

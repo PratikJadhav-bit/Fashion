@@ -1,0 +1,153 @@
+import React, { useRef, useState, useEffect } from "react";
+import { Button } from "@/components/ui/button";
+import { Slider } from "@/components/ui/slider";
+import { Label } from "@/components/ui/label";
+import { Pencil, Eraser, Trash2, Download, Palette } from "lucide-react";
+
+export default function DrawingCanvas({ onSave, onClose }) {
+  const canvasRef = useRef(null);
+  const [isDrawing, setIsDrawing] = useState(false);
+  const [brushSize, setBrushSize] = useState(5);
+  const [brushColor, setBrushColor] = useState("#000000");
+  const [tool, setTool] = useState("brush");
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    
+    const ctx = canvas.getContext("2d");
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+  }, []);
+
+  const startDrawing = (e) => {
+    setIsDrawing(true);
+    const canvas = canvasRef.current;
+    const rect = canvas.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    
+    const ctx = canvas.getContext("2d");
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+  };
+
+  const draw = (e) => {
+    if (!isDrawing) return;
+    
+    const canvas = canvasRef.current;
+    const rect = canvas.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    
+    const ctx = canvas.getContext("2d");
+    
+    if (tool === "eraser") {
+      ctx.globalCompositeOperation = "destination-out";
+      ctx.lineWidth = brushSize * 2;
+    } else {
+      ctx.globalCompositeOperation = "source-over";
+      ctx.strokeStyle = brushColor;
+      ctx.lineWidth = brushSize;
+    }
+    
+    ctx.lineTo(x, y);
+    ctx.stroke();
+  };
+
+  const stopDrawing = () => {
+    setIsDrawing(false);
+  };
+
+  const clearCanvas = () => {
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext("2d");
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+  };
+
+  const saveDrawing = () => {
+    const canvas = canvasRef.current;
+    const dataUrl = canvas.toDataURL("image/png");
+    onSave(dataUrl);
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div className="flex gap-2">
+          <Button
+            variant={tool === "brush" ? "default" : "outline"}
+            size="sm"
+            onClick={() => setTool("brush")}
+          >
+            <Pencil className="w-4 h-4" />
+          </Button>
+          <Button
+            variant={tool === "eraser" ? "default" : "outline"}
+            size="sm"
+            onClick={() => setTool("eraser")}
+          >
+            <Eraser className="w-4 h-4" />
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={clearCanvas}
+          >
+            <Trash2 className="w-4 h-4" />
+          </Button>
+        </div>
+      </div>
+
+      <div className="space-y-4">
+        <div>
+          <Label>Brush Size: {brushSize}px</Label>
+          <Slider
+            value={[brushSize]}
+            onValueChange={([val]) => setBrushSize(val)}
+            min={1}
+            max={50}
+            step={1}
+          />
+        </div>
+
+        {tool === "brush" && (
+          <div>
+            <Label>Brush Color</Label>
+            <div className="flex gap-2 items-center">
+              <Input
+                type="color"
+                value={brushColor}
+                onChange={(e) => setBrushColor(e.target.value)}
+                className="w-20 h-10"
+              />
+              <span className="text-sm text-gray-600">{brushColor}</span>
+            </div>
+          </div>
+        )}
+      </div>
+
+      <canvas
+        ref={canvasRef}
+        width={600}
+        height={600}
+        onMouseDown={startDrawing}
+        onMouseMove={draw}
+        onMouseUp={stopDrawing}
+        onMouseLeave={stopDrawing}
+        className="border-2 border-gray-300 rounded-lg cursor-crosshair bg-white w-full"
+        style={{ touchAction: "none" }}
+      />
+
+      <div className="flex justify-end gap-2">
+        <Button variant="outline" onClick={onClose}>
+          Cancel
+        </Button>
+        <Button onClick={saveDrawing} className="bg-purple-500">
+          <Download className="w-4 h-4 mr-2" />
+          Add to Design
+        </Button>
+      </div>
+    </div>
+  );
+}

@@ -1,0 +1,118 @@
+import React, { useState } from "react";
+import { base44 } from "@/api/base44Client";
+import { Button } from "@/components/ui/button";
+import { Slider } from "@/components/ui/slider";
+import { Label } from "@/components/ui/label";
+import { Loader2, Sparkles, Wand2 } from "lucide-react";
+
+export default function ImageEditor({ imageUrl, onSave, onClose }) {
+  const [brightness, setBrightness] = useState(100);
+  const [contrast, setContrast] = useState(100);
+  const [saturation, setSaturation] = useState(100);
+  const [isRemovingBg, setIsRemovingBg] = useState(false);
+  const [editedUrl, setEditedUrl] = useState(imageUrl);
+
+  const removeBackground = async () => {
+    setIsRemovingBg(true);
+    try {
+      const result = await base44.integrations.Core.InvokeLLM({
+        prompt: `This is a background removal request. Please note that actual background removal requires specialized image processing. For now, return instructions on how the user can use online tools like remove.bg or Adobe Express for best results.`,
+        add_context_from_internet: false
+      });
+      
+      alert("Background Removal:\n\nFor professional results, we recommend:\n1. Visit remove.bg (free online tool)\n2. Upload your image\n3. Download the result\n4. Re-upload to Fashion Hub\n\nThis feature will use AI processing in the next update!");
+    } catch (error) {
+      console.error("Error:", error);
+    }
+    setIsRemovingBg(false);
+  };
+
+  const applyFilters = () => {
+    onSave({
+      url: editedUrl,
+      filters: {
+        brightness,
+        contrast,
+        saturation
+      }
+    });
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="relative">
+        <img
+          src={editedUrl}
+          alt="Preview"
+          className="w-full rounded-lg border-2 border-gray-300"
+          style={{
+            filter: `brightness(${brightness}%) contrast(${contrast}%) saturate(${saturation}%)`
+          }}
+        />
+      </div>
+
+      <div className="space-y-4">
+        <div>
+          <Label>Brightness: {brightness}%</Label>
+          <Slider
+            value={[brightness]}
+            onValueChange={([val]) => setBrightness(val)}
+            min={0}
+            max={200}
+            step={5}
+          />
+        </div>
+
+        <div>
+          <Label>Contrast: {contrast}%</Label>
+          <Slider
+            value={[contrast]}
+            onValueChange={([val]) => setContrast(val)}
+            min={0}
+            max={200}
+            step={5}
+          />
+        </div>
+
+        <div>
+          <Label>Saturation: {saturation}%</Label>
+          <Slider
+            value={[saturation]}
+            onValueChange={([val]) => setSaturation(val)}
+            min={0}
+            max={200}
+            step={5}
+          />
+        </div>
+
+        <Button
+          variant="outline"
+          className="w-full"
+          onClick={removeBackground}
+          disabled={isRemovingBg}
+        >
+          {isRemovingBg ? (
+            <>
+              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              Processing...
+            </>
+          ) : (
+            <>
+              <Wand2 className="w-4 h-4 mr-2" />
+              Remove Background
+            </>
+          )}
+        </Button>
+      </div>
+
+      <div className="flex justify-end gap-2">
+        <Button variant="outline" onClick={onClose}>
+          Cancel
+        </Button>
+        <Button onClick={applyFilters} className="bg-purple-500">
+          Apply & Save
+        </Button>
+      </div>
+    </div>
+  );
+}

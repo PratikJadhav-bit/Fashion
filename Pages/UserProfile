@@ -1,0 +1,438 @@
+import React from "react";
+import { base44 } from "@/api/base44Client";
+import { createPageUrl } from "@/utils";
+import { useNavigate } from "react-router-dom";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Badge } from "@/components/ui/badge";
+import { motion } from "framer-motion";
+import {
+  User,
+  Palette,
+  Heart,
+  Users,
+  UserPlus,
+  UserMinus,
+  Grid3x3,
+  Package,
+  ShoppingBag,
+  Upload,
+  Edit
+} from "lucide-react";
+import { Skeleton } from "@/components/ui/skeleton";
+
+export default function UserProfile() {
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const [currentUser, setCurrentUser] = React.useState(null);
+  const [profileEmail, setProfileEmail] = React.useState(null);
+  const [profileUser, setProfileUser] = React.useState(null);
+  const [editingProfile, setEditingProfile] = React.useState(false);
+  const [bio, setBio] = React.useState("");
+  const fileInputRef = React.useRef(null);
+
+  React.useEffect(() => {
+    const loadUser = async () => {
+      try {
+        const user = await base44.auth.me();
+        setCurrentUser(user);
+        
+        // Get profile email from URL params
+        const params = new URLSearchParams(window.location.search);
+        const email = params.get("email");
+        setProfileEmail(email || user.email);
+
+        // Load profile user data
+        if (email && email !== user.email) {
+          const users = await base44.entities.User.list();
+          const targetUser = users.find(u => u.email === email);
+          setProfileUser(targetUser);
+        } else {
+          setProfileUser(user);
+          setBio(user.bio || "");
+        }
+      } catch (error) {
+        base44.auth.redirectToLogin(createPageUrl("UserProfile"));
+      }
+    };
+    loadUser();
+  }, []);
+
+  const { data: designs = [], isLoading: designsLoading } = useQuery({
+    queryKey: ['userDesigns', profileEmail],
+    queryFn: () => base44.entities.CustomDesign.filter({ 
+      user_email: profileEmail, 
+      is_public: true 
+    }, '-created_date'),
+    enabled: !!profileEmail,
+    initialData: [],
+  });
+
+  const { data: collections = [], isLoading: collectionsLoading } = useQuery({
+    queryKey: ['userCollections', profileEmail],
+    queryFn: () => base44.entities.DesignCollection.filter({ 
+      user_email: profileEmail, 
+      is_public: true 
+    }),
+    enabled: !!profileEmail,
+    initialData: [],
+  });
+
+  const { data: products = [], isLoading: productsLoading } = useQuery({
+    queryKey: ['userProducts', profileEmail],
+    queryFn: () => base44.entities.ProductListing.filter({ 
+      seller_email: profileEmail,
+      is_active: true 
+    }),
+    enabled: !!profileEmail,
+    initialData: [],
+  });
+
+  const { data: followers = [] } = useQuery({
+    queryKey: ['followers', profileEmail],
+    queryFn: () => base44.entities.UserFollow.filter({ following_email: profileEmail }),
+    enabled: !!profileEmail,
+    initialData: [],
+  });
+
+  const { data: following = [] } = useQuery({
+    queryKey: ['following', currentUser?.email],
+    queryFn: () => base44.entities.UserFollow.filter({ follower_email: currentUser.email }),
+    enabled: !!currentUser?.email,
+    initialData: [],
+  });
+
+  const isFollowing = following.some(f => f.following_email === profileEmail);
+  const isOwnProfile = currentUser?.email === profileEmail;
+
+  const followMutation = useMutation({
+    mutationFn: async () => {
+      return await base44.entities.UserFollow.create({
+        follower_email: currentUser.email,
+        following_email: profileEmail,
+        following_name: profileEmail.split('@')[0]
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['following'] });
+      queryClient.invalidateQueries({ queryKey: ['followers', profileEmail] });
+    },
+  });
+
+  const unfollowMutation = useMutation({
+    mutationFn: async () => {
+      const followRecord = following.find(f => f.following_email === profileEmail);
+      if (followRecord) {
+        await base44.entities.UserFollow.delete(followRecord.id);
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['following'] });
+      queryClient.invalidateQueries({ queryKey: ['followers', profileEmail] });
+    },
+  });
+
+  const updateProfileMutation = useMutation({
+    mutationFn: async (data) => {
+      return await base44.auth.updateMe(data);
+    },
+    onSuccess: (updatedUser) => {
+      setCurrentUser(updatedUser);
+      setProfileUser(updatedUser);
+      setEditingProfile(false);
+      queryClient.invalidateQueries({ queryKey: ['users'] });
+    },
+  });
+
+  const handleProfilePictureUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const { file_url } = await base44.integrations.Core.UploadFile({ file });
+      updateProfileMutation.mutate({ profile_picture: file_url });
+    } catch (error) {
+      console.error("Error uploading profile picture:", error);
+    }
+  };
+
+  const handleSaveBio = () => {
+    updateProfileMutation.mutate({ bio });
+  };
+
+  if (!currentUser || !profileEmail) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-pink-500" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-pink-50 via-purple-50 to-blue-50 p-4 md:p-8">
+      <div className="max-w-6xl mx-auto">
+        {/* Profile Header */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="bg-white rounded-3xl shadow-xl p-8 mb-8"
+        >
+          <div className="flex flex-col md:flex-row items-center gap-6">
+            <div className="relative group">
+              {profileUser?.profile_picture ? (
+                <img
+                  src={profileUser.profile_picture}
+                  alt="Profile"
+                  className="w-24 h-24 rounded-full object-cover border-4 border-purple-200"
+                />
+              ) : (
+                <div className="w-24 h-24 rounded-full bg-gradient-to-br from-pink-400 to-purple-400 flex items-center justify-center text-white text-4xl font-bold">
+                  {profileEmail[0].toUpperCase()}
+                </div>
+              )}
+              {isOwnProfile && (
+                <>
+                  <button
+                    onClick={() => fileInputRef.current?.click()}
+                    className="absolute inset-0 bg-black/50 rounded-full opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
+                  >
+                    <Upload className="w-6 h-6 text-white" />
+                  </button>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    onChange={handleProfilePictureUpload}
+                    className="hidden"
+                  />
+                </>
+              )}
+            </div>
+            
+            <div className="flex-1 text-center md:text-left">
+              <div className="flex items-center gap-3 mb-2">
+                <h1 className="text-3xl font-bold text-gray-900">
+                  {profileEmail.split('@')[0]}
+                </h1>
+                {isOwnProfile && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => setEditingProfile(!editingProfile)}
+                  >
+                    <Edit className="w-4 h-4" />
+                  </Button>
+                )}
+              </div>
+              <p className="text-gray-600 mb-2">{profileEmail}</p>
+              {editingProfile ? (
+                <div className="space-y-2 mt-4">
+                  <textarea
+                    value={bio}
+                    onChange={(e) => setBio(e.target.value)}
+                    placeholder="Write a short bio..."
+                    className="w-full p-2 border rounded-lg text-sm"
+                    rows={2}
+                  />
+                  <div className="flex gap-2">
+                    <Button size="sm" onClick={handleSaveBio} disabled={updateProfileMutation.isPending}>
+                      Save Bio
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={() => setEditingProfile(false)}>
+                      Cancel
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                profileUser?.bio && (
+                  <p className="text-gray-700 text-sm mt-2 max-w-md">
+                    {profileUser.bio}
+                  </p>
+                )
+              )}
+              
+              <div className="flex flex-wrap gap-6 justify-center md:justify-start">
+                <div className="text-center">
+                  <p className="text-2xl font-bold text-gray-900">{designs.length}</p>
+                  <p className="text-sm text-gray-500">Designs</p>
+                </div>
+                <div className="text-center">
+                  <p className="text-2xl font-bold text-gray-900">{followers.length}</p>
+                  <p className="text-sm text-gray-500">Followers</p>
+                </div>
+                <div className="text-center">
+                  <p className="text-2xl font-bold text-gray-900">{collections.length}</p>
+                  <p className="text-sm text-gray-500">Collections</p>
+                </div>
+              </div>
+            </div>
+
+            {!isOwnProfile && (
+              <Button
+                onClick={() => isFollowing ? unfollowMutation.mutate() : followMutation.mutate()}
+                disabled={followMutation.isPending || unfollowMutation.isPending}
+                className={isFollowing ? "bg-gray-200 text-gray-700" : "bg-gradient-to-r from-purple-500 to-pink-500"}
+              >
+                {isFollowing ? (
+                  <>
+                    <UserMinus className="w-4 h-4 mr-2" />
+                    Unfollow
+                  </>
+                ) : (
+                  <>
+                    <UserPlus className="w-4 h-4 mr-2" />
+                    Follow
+                  </>
+                )}
+              </Button>
+            )}
+          </div>
+        </motion.div>
+
+        {/* Content Tabs */}
+        <Tabs defaultValue="designs" className="w-full">
+          <TabsList className="w-full grid grid-cols-3 mb-8">
+            <TabsTrigger value="designs" className="flex items-center gap-2">
+              <Grid3x3 className="w-4 h-4" />
+              Designs
+            </TabsTrigger>
+            <TabsTrigger value="collections" className="flex items-center gap-2">
+              <Package className="w-4 h-4" />
+              Collections
+            </TabsTrigger>
+            <TabsTrigger value="products" className="flex items-center gap-2">
+              <ShoppingBag className="w-4 h-4" />
+              Products
+            </TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="designs">
+            {designsLoading ? (
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                {[...Array(6)].map((_, i) => (
+                  <Skeleton key={i} className="h-64 w-full rounded-lg" />
+                ))}
+              </div>
+            ) : designs.length === 0 ? (
+              <div className="text-center py-16">
+                <Palette className="w-16 h-16 mx-auto mb-4 text-gray-300" />
+                <h3 className="text-xl font-semibold text-gray-900 mb-2">
+                  No public designs yet
+                </h3>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                {designs.map((design) => (
+                  <Card
+                    key={design.id}
+                    className="group cursor-pointer hover:shadow-xl transition-all duration-300"
+                    onClick={() => navigate(createPageUrl("DesignEditor") + "?id=" + design.id)}
+                  >
+                    <div 
+                      className="h-48 relative"
+                      style={{ backgroundColor: design.base_color }}
+                    >
+                      <div className="absolute inset-0 flex items-center justify-center opacity-30 text-8xl">
+                        👕
+                      </div>
+                    </div>
+                    <CardContent className="p-4">
+                      <h3 className="font-semibold text-gray-900 mb-1">
+                        {design.design_name}
+                      </h3>
+                      <div className="flex items-center justify-between">
+                        <p className="text-sm text-gray-500">
+                          {design.likes_count || 0} likes
+                        </p>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
+          </TabsContent>
+
+          <TabsContent value="collections">
+            {collectionsLoading ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {[...Array(4)].map((_, i) => (
+                  <Skeleton key={i} className="h-32 w-full rounded-lg" />
+                ))}
+              </div>
+            ) : collections.length === 0 ? (
+              <div className="text-center py-16">
+                <Package className="w-16 h-16 mx-auto mb-4 text-gray-300" />
+                <h3 className="text-xl font-semibold text-gray-900 mb-2">
+                  No public collections yet
+                </h3>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {collections.map((collection) => (
+                  <Card key={collection.id} className="hover:shadow-lg transition-shadow">
+                    <CardContent className="p-6">
+                      <h3 className="text-xl font-semibold text-gray-900 mb-2">
+                        {collection.collection_name}
+                      </h3>
+                      <p className="text-gray-600 mb-4">{collection.description}</p>
+                      <Badge variant="outline">
+                        {collection.design_ids?.length || 0} designs
+                      </Badge>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
+          </TabsContent>
+
+          <TabsContent value="products">
+            {productsLoading ? (
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                {[...Array(6)].map((_, i) => (
+                  <Skeleton key={i} className="h-64 w-full rounded-lg" />
+                ))}
+              </div>
+            ) : products.length === 0 ? (
+              <div className="text-center py-16">
+                <ShoppingBag className="w-16 h-16 mx-auto mb-4 text-gray-300" />
+                <h3 className="text-xl font-semibold text-gray-900 mb-2">
+                  No products for sale yet
+                </h3>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                {products.map((product) => (
+                  <Card
+                    key={product.id}
+                    className="group cursor-pointer hover:shadow-xl transition-all duration-300"
+                    onClick={() => navigate(createPageUrl("ProductDetail") + "?id=" + product.id)}
+                  >
+                    <div className="h-48 bg-gray-100 relative">
+                      <div className="absolute inset-0 flex items-center justify-center text-7xl opacity-30">
+                        👕
+                      </div>
+                      <Badge className="absolute top-2 right-2 bg-green-500">
+                        ${product.price.toFixed(2)}
+                      </Badge>
+                    </div>
+                    <CardContent className="p-4">
+                      <h3 className="font-semibold text-gray-900 mb-1">
+                        {product.product_name}
+                      </h3>
+                      <div className="flex items-center justify-between text-sm text-gray-500">
+                        <span>{product.sales_count || 0} sold</span>
+                        <span>{product.views_count || 0} views</span>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
+          </TabsContent>
+        </Tabs>
+      </div>
+    </div>
+  );
+}

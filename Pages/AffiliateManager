@@ -1,0 +1,490 @@
+import React from "react";
+import { base44 } from "@/api/base44Client";
+import { createPageUrl } from "@/utils";
+import { useNavigate } from "react-router-dom";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { motion } from "framer-motion";
+import {
+  Plus,
+  Edit,
+  Trash2,
+  ShoppingBag,
+  ExternalLink,
+  Filter
+} from "lucide-react";
+
+export default function AffiliateManager() {
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const [user, setUser] = React.useState(null);
+  const [showDialog, setShowDialog] = React.useState(false);
+  const [editingProduct, setEditingProduct] = React.useState(null);
+  const [filterCategory, setFilterCategory] = React.useState("all");
+  
+  const [formData, setFormData] = React.useState({
+    product_name: "",
+    product_url: "",
+    image_url: "",
+    description: "",
+    category: "tops",
+    occasion_types: [],
+    style_tags: [],
+    colors: [],
+    price: "",
+    price_range: "moderate",
+    source_platform: "Amazon",
+    gender: "unisex",
+    is_active: true
+  });
+
+  React.useEffect(() => {
+    const loadUser = async () => {
+      try {
+        const currentUser = await base44.auth.me();
+        setUser(currentUser);
+        if (currentUser.role !== "admin") {
+          navigate(createPageUrl("Home"));
+        }
+      } catch (error) {
+        base44.auth.redirectToLogin(createPageUrl("AffiliateManager"));
+      }
+    };
+    loadUser();
+  }, []);
+
+  const { data: products = [], isLoading } = useQuery({
+    queryKey: ['affiliateProducts'],
+    queryFn: () => base44.entities.AffiliateProduct.list('-created_date'),
+    initialData: [],
+  });
+
+  const createMutation = useMutation({
+    mutationFn: (data) => base44.entities.AffiliateProduct.create(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['affiliateProducts'] });
+      handleCloseDialog();
+    },
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: ({ id, data }) => base44.entities.AffiliateProduct.update(id, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['affiliateProducts'] });
+      handleCloseDialog();
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id) => base44.entities.AffiliateProduct.delete(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['affiliateProducts'] });
+    },
+  });
+
+  const handleOpenDialog = (product = null) => {
+    if (product) {
+      setEditingProduct(product);
+      setFormData({
+        product_name: product.product_name,
+        product_url: product.product_url,
+        image_url: product.image_url || "",
+        description: product.description || "",
+        category: product.category,
+        occasion_types: product.occasion_types || [],
+        style_tags: product.style_tags || [],
+        colors: product.colors || [],
+        price: product.price,
+        price_range: product.price_range,
+        source_platform: product.source_platform,
+        gender: product.gender || "unisex",
+        is_active: product.is_active !== false
+      });
+    } else {
+      setEditingProduct(null);
+      setFormData({
+        product_name: "",
+        product_url: "",
+        image_url: "",
+        description: "",
+        category: "tops",
+        occasion_types: [],
+        style_tags: [],
+        colors: [],
+        price: "",
+        price_range: "moderate",
+        source_platform: "Amazon",
+        gender: "unisex",
+        is_active: true
+      });
+    }
+    setShowDialog(true);
+  };
+
+  const handleCloseDialog = () => {
+    setShowDialog(false);
+    setEditingProduct(null);
+  };
+
+  const handleSubmit = () => {
+    const data = {
+      ...formData,
+      price: parseFloat(formData.price)
+    };
+
+    if (editingProduct) {
+      updateMutation.mutate({ id: editingProduct.id, data });
+    } else {
+      createMutation.mutate(data);
+    }
+  };
+
+  const handleArrayInput = (field, value) => {
+    const arr = value.split(',').map(s => s.trim()).filter(s => s);
+    setFormData({ ...formData, [field]: arr });
+  };
+
+  const filteredProducts = filterCategory === "all" 
+    ? products 
+    : products.filter(p => p.category === filterCategory);
+
+  if (!user || user.role !== "admin") {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-pink-500" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-green-50 via-blue-50 to-purple-50 p-4 md:p-8">
+      <div className="max-w-7xl mx-auto">
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="mb-8"
+        >
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-green-400 to-blue-400 flex items-center justify-center">
+                <ShoppingBag className="w-6 h-6 text-white" />
+              </div>
+              <div>
+                <h1 className="text-3xl font-bold text-gray-900">Affiliate Products Manager</h1>
+                <p className="text-gray-600">{products.length} products configured</p>
+              </div>
+            </div>
+            <Button
+              onClick={() => handleOpenDialog()}
+              className="bg-gradient-to-r from-green-500 to-blue-500"
+            >
+              <Plus className="w-4 h-4 mr-2" />
+              Add Product
+            </Button>
+          </div>
+
+          <div className="flex gap-2 mb-4">
+            <Select value={filterCategory} onValueChange={setFilterCategory}>
+              <SelectTrigger className="w-48">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Categories</SelectItem>
+                <SelectItem value="tops">Tops</SelectItem>
+                <SelectItem value="bottoms">Bottoms</SelectItem>
+                <SelectItem value="dresses">Dresses</SelectItem>
+                <SelectItem value="outerwear">Outerwear</SelectItem>
+                <SelectItem value="shoes">Shoes</SelectItem>
+                <SelectItem value="accessories">Accessories</SelectItem>
+                <SelectItem value="activewear">Activewear</SelectItem>
+                <SelectItem value="formal">Formal</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </motion.div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {filteredProducts.map((product, index) => (
+            <motion.div
+              key={product.id}
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ delay: index * 0.05 }}
+            >
+              <Card className={`group hover:shadow-2xl transition-all ${!product.is_active ? 'opacity-60' : ''}`}>
+                {product.image_url && (
+                  <div className="relative h-48 overflow-hidden rounded-t-lg">
+                    <img
+                      src={product.image_url}
+                      alt={product.product_name}
+                      className="w-full h-full object-cover group-hover:scale-110 transition-transform"
+                    />
+                    {!product.is_active && (
+                      <Badge className="absolute top-3 right-3 bg-gray-500">Inactive</Badge>
+                    )}
+                  </div>
+                )}
+                <CardContent className="p-4">
+                  <h3 className="font-semibold text-lg text-gray-900 mb-1 line-clamp-1">
+                    {product.product_name}
+                  </h3>
+                  <p className="text-sm text-gray-600 mb-2 line-clamp-2">
+                    {product.description}
+                  </p>
+                  
+                  <div className="flex items-center gap-2 mb-2">
+                    <Badge variant="outline">{product.category}</Badge>
+                    <Badge className="bg-green-100 text-green-700">
+                      ₹{product.price}
+                    </Badge>
+                    <Badge variant="outline">{product.source_platform}</Badge>
+                  </div>
+
+                  {product.style_tags?.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mb-2">
+                      {product.style_tags.slice(0, 3).map((tag, i) => (
+                        <span key={i} className="text-xs bg-purple-50 text-purple-700 px-2 py-0.5 rounded">
+                          {tag}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+
+                  <div className="flex gap-2 mt-3">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="flex-1"
+                      onClick={() => handleOpenDialog(product)}
+                    >
+                      <Edit className="w-3 h-3 mr-1" />
+                      Edit
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      onClick={() => window.open(product.product_url, '_blank')}
+                    >
+                      <ExternalLink className="w-3 h-3" />
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      onClick={() => {
+                        if (confirm("Delete this product?")) {
+                          deleteMutation.mutate(product.id);
+                        }
+                      }}
+                    >
+                      <Trash2 className="w-3 h-3" />
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            </motion.div>
+          ))}
+        </div>
+
+        {filteredProducts.length === 0 && (
+          <div className="text-center py-16">
+            <ShoppingBag className="w-16 h-16 mx-auto mb-4 text-gray-300" />
+            <p className="text-gray-600 mb-4">No products found</p>
+            <Button
+              onClick={() => handleOpenDialog()}
+              className="bg-gradient-to-r from-green-500 to-blue-500"
+            >
+              <Plus className="w-4 h-4 mr-2" />
+              Add Your First Product
+            </Button>
+          </div>
+        )}
+
+        {/* Product Dialog */}
+        <Dialog open={showDialog} onOpenChange={setShowDialog}>
+          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>
+                {editingProduct ? "Edit Product" : "Add New Product"}
+              </DialogTitle>
+            </DialogHeader>
+            
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="col-span-2">
+                  <Label>Product Name *</Label>
+                  <Input
+                    value={formData.product_name}
+                    onChange={(e) => setFormData({ ...formData, product_name: e.target.value })}
+                    placeholder="Blue Cotton T-Shirt"
+                  />
+                </div>
+
+                <div className="col-span-2">
+                  <Label>Affiliate URL *</Label>
+                  <Input
+                    value={formData.product_url}
+                    onChange={(e) => setFormData({ ...formData, product_url: e.target.value })}
+                    placeholder="https://amazon.in/..."
+                  />
+                </div>
+
+                <div className="col-span-2">
+                  <Label>Image URL</Label>
+                  <Input
+                    value={formData.image_url}
+                    onChange={(e) => setFormData({ ...formData, image_url: e.target.value })}
+                    placeholder="https://..."
+                  />
+                </div>
+
+                <div className="col-span-2">
+                  <Label>Description</Label>
+                  <Textarea
+                    value={formData.description}
+                    onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                    rows={3}
+                    placeholder="Comfortable cotton t-shirt..."
+                  />
+                </div>
+
+                <div>
+                  <Label>Category *</Label>
+                  <Select value={formData.category} onValueChange={(v) => setFormData({ ...formData, category: v })}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="tops">Tops</SelectItem>
+                      <SelectItem value="bottoms">Bottoms</SelectItem>
+                      <SelectItem value="dresses">Dresses</SelectItem>
+                      <SelectItem value="outerwear">Outerwear</SelectItem>
+                      <SelectItem value="shoes">Shoes</SelectItem>
+                      <SelectItem value="accessories">Accessories</SelectItem>
+                      <SelectItem value="activewear">Activewear</SelectItem>
+                      <SelectItem value="formal">Formal</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div>
+                  <Label>Source Platform *</Label>
+                  <Select value={formData.source_platform} onValueChange={(v) => setFormData({ ...formData, source_platform: v })}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Amazon">Amazon</SelectItem>
+                      <SelectItem value="Flipkart">Flipkart</SelectItem>
+                      <SelectItem value="Meesho">Meesho</SelectItem>
+                      <SelectItem value="Other">Other</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div>
+                  <Label>Price *</Label>
+                  <Input
+                    type="number"
+                    value={formData.price}
+                    onChange={(e) => setFormData({ ...formData, price: e.target.value })}
+                    placeholder="999"
+                  />
+                </div>
+
+                <div>
+                  <Label>Price Range</Label>
+                  <Select value={formData.price_range} onValueChange={(v) => setFormData({ ...formData, price_range: v })}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="budget_friendly">Budget Friendly</SelectItem>
+                      <SelectItem value="moderate">Moderate</SelectItem>
+                      <SelectItem value="luxury">Luxury</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div>
+                  <Label>Gender</Label>
+                  <Select value={formData.gender} onValueChange={(v) => setFormData({ ...formData, gender: v })}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="male">Male</SelectItem>
+                      <SelectItem value="female">Female</SelectItem>
+                      <SelectItem value="unisex">Unisex</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="col-span-2">
+                  <Label>Occasions (comma-separated)</Label>
+                  <Input
+                    value={formData.occasion_types.join(', ')}
+                    onChange={(e) => handleArrayInput('occasion_types', e.target.value)}
+                    placeholder="wedding, party, casual_hangout"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    Options: wedding, job_interview, date, party, casual_hangout, business_meeting, dinner, brunch, concert, beach, gym, formal_event
+                  </p>
+                </div>
+
+                <div className="col-span-2">
+                  <Label>Style Tags (comma-separated)</Label>
+                  <Input
+                    value={formData.style_tags.join(', ')}
+                    onChange={(e) => handleArrayInput('style_tags', e.target.value)}
+                    placeholder="casual, bohemian, minimalist"
+                  />
+                </div>
+
+                <div className="col-span-2">
+                  <Label>Colors (comma-separated)</Label>
+                  <Input
+                    value={formData.colors.join(', ')}
+                    onChange={(e) => handleArrayInput('colors', e.target.value)}
+                    placeholder="blue, black, white"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <DialogFooter>
+              <Button variant="outline" onClick={handleCloseDialog}>
+                Cancel
+              </Button>
+              <Button
+                onClick={handleSubmit}
+                disabled={!formData.product_name || !formData.product_url || !formData.price}
+                className="bg-gradient-to-r from-green-500 to-blue-500"
+              >
+                {editingProduct ? "Update" : "Add"} Product
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </div>
+    </div>
+  );
+}
